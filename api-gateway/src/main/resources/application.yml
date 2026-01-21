@@ -1,0 +1,35 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      routes:
+        - id: product-route
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/products/**
+          filters:
+            - StripPrefix=1
+
+        - id: cart-route
+          uri: http://localhost:8082
+          predicates:
+            - Path=/api/cart/**
+          filters:
+            - StripPrefix=1
+
+        - id: order-route
+          uri: http://localhost:8083
+          predicates:
+            - Path=/api/orders/**
+          filters:
+            - StripPrefix=1
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,gateway

@@ -4,6 +4,7 @@ server:
 spring:
   application:
     name: api-gateway
+
   cloud:
     gateway:
       routes:
@@ -32,4 +33,8 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,gateway
+        include: "*"
+
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG

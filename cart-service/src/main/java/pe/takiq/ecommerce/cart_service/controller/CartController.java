@@ -2,41 +2,42 @@ package pe.takiq.ecommerce.cart_service.controller;
 
 import org.springframework.web.bind.annotation.*;
 
-import pe.takiq.ecommerce.cart_service.model.Cart;
-import pe.takiq.ecommerce.cart_service.model.CartItem;
+import lombok.RequiredArgsConstructor;
+import pe.takiq.ecommerce.cart_service.dto.request.AddItemRequestDTO;
+import pe.takiq.ecommerce.cart_service.dto.response.CartResponseDTO;
+import pe.takiq.ecommerce.cart_service.mapper.CartMapper;
 import pe.takiq.ecommerce.cart_service.service.CartService;
 
 @RestController
 @RequestMapping("/cart")
+@RequiredArgsConstructor
 public class CartController {
 
     private final CartService service;
-
-    public CartController(CartService service) {
-        this.service = service;
-    }
+    private final CartMapper mapper;
 
     @PostMapping
-    public Cart createCart() {
-        return service.createCart();
+    public CartResponseDTO createCart() {
+        return mapper.toResponse(service.createCart());
     }
 
     @GetMapping("/{cartId}")
-    public Cart getCart(@PathVariable String cartId) {
-        return service.getCart(cartId);
+    public CartResponseDTO getCart(
+            @PathVariable("cartId") String cartId) {
+        return mapper.toResponse(service.getCartEntity(cartId));
     }
 
     @PostMapping("/{cartId}/items")
-    public Cart addItem(
-            @PathVariable String cartId,
-            @RequestBody CartItem item) {
-        return service.addItem(cartId, item);
+    public CartResponseDTO addItem(
+            @PathVariable("cartId") String cartId,
+            @RequestBody AddItemRequestDTO request) {
+        return mapper.toResponse(service.addItem(cartId, request));
     }
 
-    @DeleteMapping("/{cartId}/items/{itemId}")
-    public Cart removeItem(
-            @PathVariable String cartId,
-            @PathVariable Long itemId) {
-        return service.removeItem(cartId, itemId);
+    @DeleteMapping("/{cartId}/items/{productId}")
+    public CartResponseDTO removeItem(
+            @PathVariable("cartId") String cartId,
+            @PathVariable("productId") Long productId) {
+        return mapper.toResponse(service.removeItem(cartId, productId));
     }
 }

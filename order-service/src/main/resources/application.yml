@@ -1,28 +1,23 @@
 server:
-  port: 8082
+  port: 8083
 
 spring:
   application:
-    name: cart-service
-
+    name: order-service
   datasource:
-    url: jdbc:sqlserver://localhost:1433;databaseName=ecommerce_cart;encrypt=true;trustServerCertificate=true
-    username: ecommerce_cart_user
-    password: CartPass123!       
+    url: jdbc:sqlserver://localhost:1433;databaseName=orderdb;encrypt=true;trustServerCertificate=true
+    username: order_user
+    password: TuPasswordFuerte123!
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
 
   jpa:
     hibernate:
-      ddl-auto: update           
+      ddl-auto: update
     show-sql: true
     properties:
       hibernate:
         dialect: org.hibernate.dialect.SQLServerDialect
         format_sql: true
-
-
-product-service:
-  url: http://localhost:8081
 
 management:
   endpoints:

@@ -1,0 +1,94 @@
+version: '3.9'
+
+services:
+  gateway:
+    build: ./api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVER_PORT=8080
+
+  product:
+    build: ./product-service
+    ports:
+      - "8081:8081"
+    environment:
+      - SERVER_PORT=8081
+      - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      - postgres-product
+
+  postgres-product:
+    image: postgres:16
+    container_name: postgres-product
+    restart: always
+    environment:
+      POSTGRES_DB: ecommerce_product
+      POSTGRES_USER: ecommerce_user
+      POSTGRES_PASSWORD: ecommerce_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-product-data:/var/lib/postgresql/data
+
+  cart:
+    build: ./cart-service
+    ports:
+      - "8082:8082"
+    environment:
+      - SERVER_PORT=8082
+      - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      - sqlserver-cart
+
+  sqlserver-cart:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sqlserver-cart
+    restart: always
+    environment:
+      ACCEPT_EULA: Y
+      SA_PASSWORD: YourStrong@Passw0rd
+      MSSQL_PID: Express
+    ports:
+      - "1434:1433"
+    volumes:
+      - sqlserver-cart-data:/var/opt/mssql
+  
+  orderdb:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sqlserver-order
+    restart: always
+    environment:
+      ACCEPT_EULA: Y
+      SA_PASSWORD: YourStrong@Passw0rd
+    ports:
+      - "1435:1433"
+
+  order:
+    build: ./order-service
+    ports:
+      - "8083:8083"
+    environment:
+      - SERVER_PORT=8083
+      - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      - rabbitmq
+      - orderdb
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+volumes:
+  postgres-product-data:
+  sqlserver-cart-data:
+  rabbitmq-data:

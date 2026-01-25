@@ -20,9 +20,9 @@ public class OrderController {
             @RequestBody CartDTO cart,
             @RequestParam(name = "guestEmail", required = false) String guestEmail) {
 
-            if (cart == null || cart.getItems() == null || cart.getItems().isEmpty()) {
-        return ResponseEntity.badRequest().build();
-       }
+        if (cart == null || cart.getItems() == null || cart.getItems().isEmpty()) {
+            return ResponseEntity.badRequest().body(null);
+        }
 
         Order order = orderService.createPendingOrderFromCart(cart, guestEmail);
         return ResponseEntity.ok(order);

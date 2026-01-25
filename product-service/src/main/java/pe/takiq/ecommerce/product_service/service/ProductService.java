@@ -20,7 +20,7 @@ public class ProductService {
         return repository.findAll();
     }
 
-    public Product findById(Long id) {
+    public Product findById(String id) {
         return repository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Producto no encontrado"));
     }

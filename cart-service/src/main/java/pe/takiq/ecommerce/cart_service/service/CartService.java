@@ -3,6 +3,7 @@ package pe.takiq.ecommerce.cart_service.service;
 import org.springframework.stereotype.Service;
 
 import lombok.RequiredArgsConstructor;
+import pe.takiq.ecommerce.cart_service.client.InventoryClient;
 import pe.takiq.ecommerce.cart_service.client.ProductClient;
 import pe.takiq.ecommerce.cart_service.dto.ProductDTO;
 import pe.takiq.ecommerce.cart_service.dto.request.AddItemRequestDTO;
@@ -15,6 +16,7 @@ import pe.takiq.ecommerce.cart_service.repository.CartRepository;
 public class CartService {
 
     private final CartRepository repository;
+    private final InventoryClient inventoryClient;
     private final ProductClient productClient;
 
     public Cart createCart() {
@@ -29,11 +31,18 @@ public class CartService {
     public Cart addItem(String cartId, AddItemRequestDTO request) {
         Cart cart = getCartEntity(cartId);
 
-        ProductDTO product = productClient.getProductById(request.getProductId());
+        String productIdStr = request.getProductId().toString();
 
-        if (product.getStock() < request.getQuantity()) {
-            throw new RuntimeException("Stock insuficiente");
+        boolean hasStock = inventoryClient.checkStock(
+            request.getProductId().toString(),
+            request.getQuantity()
+        );
+
+        if (!hasStock) {
+            throw new RuntimeException("Stock insuficiente para producto " + request.getProductId());
         }
+
+        ProductDTO product = productClient.getProductById(productIdStr);
 
         CartItem item = new CartItem();
         item.setProductId(product.getId());
@@ -45,7 +54,7 @@ public class CartService {
         return repository.save(cart);
     }
 
-    public Cart removeItem(String cartId, Long productId) {
+    public Cart removeItem(String cartId, String productId) {
         Cart cart = getCartEntity(cartId);
         cart.getItems().removeIf(i -> i.getProductId().equals(productId));
         return repository.save(cart);

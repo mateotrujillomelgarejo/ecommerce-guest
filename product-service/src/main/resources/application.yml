@@ -5,20 +5,12 @@ spring:
   application:
     name: product-service
 
-  datasource:
-    url: jdbc:postgresql://localhost:5432/ecommerce_product
-    username: ecommerce_user         
-    password: ecommerce_pass          
-    driver-class-name: org.postgresql.Driver
+  data:
+    mongodb:
+      uri: mongodb://product_user:Product123@localhost:27017/ecommerce_product?authSource=ecommerce_product
 
-  jpa:
-    hibernate:
-      ddl-auto: update                
-    show-sql: true
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-        format_sql: true
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:default}
 
 management:
   endpoints:

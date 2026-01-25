@@ -4,6 +4,13 @@ server:
 spring:
   application:
     name: order-service
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
   datasource:
     url: jdbc:sqlserver://localhost:1433;databaseName=orderdb;encrypt=true;trustServerCertificate=true
     username: order_user
@@ -17,7 +24,9 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.SQLServerDialect
-        format_sql: true
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:default}
 
 management:
   endpoints:

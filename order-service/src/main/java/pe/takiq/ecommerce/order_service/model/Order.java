@@ -22,6 +22,7 @@ public class Order {
     private String id;
 
     private String cartId;
+    private String guestId;  // ← Nuevo campo
     private String guestEmail;
     private String status;
 

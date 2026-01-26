@@ -28,6 +28,25 @@ spring:
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:default}
 
+customer-service:
+  url: ${CUSTOMER_SERVICE_URL:http://localhost:8085}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      customerClient:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+
+  retry:
+    instances:
+      customerClient:
+        maxAttempts: 3
+        waitDuration: 500ms
+
 management:
   endpoints:
     web:

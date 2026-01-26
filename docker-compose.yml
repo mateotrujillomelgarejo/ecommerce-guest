@@ -1,6 +1,7 @@
 version: '3.9'
 
 services:
+
   gateway:
     build: ./api-gateway
     container_name: gateway
@@ -13,6 +14,7 @@ services:
       - product
       - cart
       - order
+      - customer
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
       interval: 10s
@@ -54,43 +56,42 @@ services:
       timeout: 5s
       retries: 5
 
+  inventory:
+    build: ./inventory-service
+    container_name: inventory-service
+    ports:
+      - "8084:8084"
+    environment:
+      - SERVER_PORT=8084
+      - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      postgres-inventory:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-inventory:
-  build: ./inventory-service
-  container_name: inventory-service
-  ports:
-    - "8084:8084"
-  environment:
-    - SERVER_PORT=8084
-    - SPRING_PROFILES_ACTIVE=docker
-  depends_on:
-    postgres-inventory:
-      condition: service_healthy
-    rabbitmq:
-      condition: service_started
-  healthcheck:
-    test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
-    interval: 10s
-    timeout: 5s
-    retries: 5
-
-postgres-inventory:
-  image: postgres:16
-  container_name: postgres-inventory
-  restart: always
-  environment:
-    POSTGRES_DB: inventory_db
-    POSTGRES_USER: inventory_user
-    POSTGRES_PASSWORD: InventoryPass123!
-  ports:
-    - "5436:5432"
-  volumes:
-    - postgres-inventory-data:/var/lib/postgresql/data
-  healthcheck:
-    test: ["CMD-SHELL", "pg_isready -U inventory_user -d inventory_db"]
-    interval: 5s
-    timeout: 5s
-    retries: 5
+  postgres-inventory:
+    image: postgres:16
+    container_name: postgres-inventory
+    restart: always
+    environment:
+      POSTGRES_DB: inventory_db
+      POSTGRES_USER: inventory_user
+      POSTGRES_PASSWORD: InventoryPass123!
+    ports:
+      - "5436:5432"
+    volumes:
+      - postgres-inventory-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inventory_user -d inventory_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   cart:
     build: ./cart-service
@@ -101,8 +102,11 @@ postgres-inventory:
       - SERVER_PORT=8082
       - SPRING_PROFILES_ACTIVE=docker
       - PRODUCT_SERVICE_URL=http://product:8081
+      - INVENTORY_SERVICE_URL=http://inventory:8084
     depends_on:
       sqlserver-cart:
+        condition: service_healthy
+      inventory:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
@@ -165,6 +169,41 @@ postgres-inventory:
       timeout: 5s
       retries: 5
 
+  customer:
+    build: ./customer-service
+    container_name: customer-service
+    ports:
+      - "8085:8085"
+    environment:
+      - SERVER_PORT=8085
+      - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      postgres-customer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-customer:
+    image: postgres:16
+    container_name: postgres-customer
+    restart: always
+    environment:
+      POSTGRES_DB: customer_db
+      POSTGRES_USER: customer_user
+      POSTGRES_PASSWORD: CustomerPass123!
+    ports:
+      - "5437:5432"
+    volumes:
+      - postgres-customer-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U customer_user -d customer_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
@@ -186,6 +225,7 @@ postgres-inventory:
 volumes:
   postgres-product-data:
   postgres-inventory-data:
+  postgres-customer-data:
   sqlserver-cart-data:
   sqlserver-order-data:
   rabbitmq-data:

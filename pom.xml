@@ -22,6 +22,7 @@
         <module>order-service</module>
         <module>ecommerce-events</module>
         <module>inventory-service</module>
+        <module>customer-service</module>
     </modules>
 
     <properties>
@@ -33,7 +34,6 @@
 
     <dependencyManagement>
         <dependencies>
-            <!-- Spring Boot -->
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
@@ -41,7 +41,6 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <!-- Spring Cloud -->
             <dependency>
                 <groupId>org.springframework.cloud</groupId>
                 <artifactId>spring-cloud-dependencies</artifactId>

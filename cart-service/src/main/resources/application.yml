@@ -29,6 +29,31 @@ product-service:
 inventory-service:
   url: ${INVENTORY_SERVICE_URL:http://localhost:8084}
 
+resilience4j:
+  circuitbreaker:
+    instances:
+      inventoryClient:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+
+      productClient:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+
+  retry:
+    instances:
+      inventoryClient:
+        maxAttempts: 3
+        waitDuration: 500ms
+
+      productClient:
+        maxAttempts: 3
+        waitDuration: 500ms
+
 management:
   endpoints:
     web:

@@ -6,13 +6,18 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 
 import jakarta.transaction.Transactional;
+import pe.takiq.ecommerce.order_service.client.CustomerClient;
 import pe.takiq.ecommerce.order_service.config.RabbitMQConfig;
 import pe.takiq.ecommerce.order_service.dto.CartDTO;
 import pe.takiq.ecommerce.order_service.dto.CartItemDTO;
+import pe.takiq.ecommerce.order_service.dto.CustomerDTO;
 import pe.takiq.ecommerce.events.OrderConfirmedEvent;
 import pe.takiq.ecommerce.order_service.model.Order;
 import pe.takiq.ecommerce.order_service.model.OrderItem;
 import pe.takiq.ecommerce.order_service.repository.OrderRepository;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
+
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -25,13 +30,22 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final RabbitTemplate rabbitTemplate;
+    private final CustomerClient customerClient;
 
     @Transactional
-    public Order createPendingOrderFromCart(CartDTO cart, String guestEmail) {
-        
+    @CircuitBreaker(
+        name = "customerClient",
+        fallbackMethod = "customerFallback"
+    )
+    @Retry(name = "customerClient")
+    public Order createPendingOrderFromCart(CartDTO cart, String guestId) {
+
+        CustomerDTO customer = customerClient.getGuest(guestId);
+
         Order order = new Order();
         order.setCartId(cart.getId());
-        order.setGuestEmail(guestEmail);
+        order.setGuestEmail(customer.getEmail());
+        order.setGuestId(guestId);
         order.setStatus("PENDING_PAYMENT");
         order.setItems(new ArrayList<>());
 
@@ -53,6 +67,17 @@ public class OrderService {
 
         order.setTotalAmount(total);
         return orderRepository.save(order);
+    }
+
+    public Order customerFallback(
+        CartDTO cart,
+        String guestId,
+        Throwable ex
+    ) {
+        throw new IllegalStateException(
+            "Customer Service no disponible. No se puede crear la orden.",
+            ex
+        );
     }
 
 @Transactional

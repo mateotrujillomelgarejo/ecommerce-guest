@@ -18,13 +18,13 @@ public class OrderController {
     @PostMapping
     public ResponseEntity<Order> createPendingOrder(
             @RequestBody CartDTO cart,
-            @RequestParam(name = "guestEmail", required = false) String guestEmail) {
+            @RequestParam(name = "guestId", required = true) String guestId) {
 
         if (cart == null || cart.getItems() == null || cart.getItems().isEmpty()) {
             return ResponseEntity.badRequest().body(null);
         }
 
-        Order order = orderService.createPendingOrderFromCart(cart, guestEmail);
+        Order order = orderService.createPendingOrderFromCart(cart, guestId);
         return ResponseEntity.ok(order);
     }
 

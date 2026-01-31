@@ -23,6 +23,10 @@
         <module>ecommerce-events</module>
         <module>inventory-service</module>
         <module>customer-service</module>
+        <module>notification-service</module>
+        <module>pricing-service</module>
+        <module>shipping-service</module>
+        <module>payment-service</module>
     </modules>
 
     <properties>

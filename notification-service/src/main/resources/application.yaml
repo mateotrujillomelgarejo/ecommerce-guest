@@ -1,0 +1,54 @@
+server:
+  port: 8089
+
+spring:
+  application:
+    name: notification-service
+
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${NOTIFICATION_EMAIL_USER}
+    password: ${NOTIFICATION_EMAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: 5672
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASS:guest}
+
+    listener:
+      simple:
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 2s
+        default-requeue-rejected: false
+
+  data:
+    redis:
+      host: redis
+      port: 6379
+
+  thymeleaf:
+    cache: false
+
+resilience4j:
+  retry:
+    instances:
+      emailSender:
+        maxAttempts: 3
+        waitDuration: 500ms
+
+notification:
+  from: "Tu Tienda <no-reply@tutienda.pe>"
+  subject:
+    order-created: "¡Recibimos tu pedido! #{orderId}"
+    order-confirmed: "¡Pago confirmado! Tu pedido #{orderId} está en proceso"

@@ -5,6 +5,11 @@ spring:
   application:
     name: cart-service
 
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
   datasource:
     url: jdbc:postgresql://localhost:5432/ecommerce_cart
     username: ecommerce_cart_user
@@ -29,33 +34,7 @@ product-service:
 inventory-service:
   url: ${INVENTORY_SERVICE_URL:http://localhost:8084}
 
-resilience4j:
-  circuitbreaker:
-    instances:
-      inventoryClient:
-        registerHealthIndicator: true
-        slidingWindowSize: 10
-        failureRateThreshold: 50
-        waitDurationInOpenState: 10s
-        permittedNumberOfCallsInHalfOpenState: 3
-
-      productClient:
-        registerHealthIndicator: true
-        slidingWindowSize: 10
-        failureRateThreshold: 50
-
-  retry:
-    instances:
-      inventoryClient:
-        maxAttempts: 3
-        waitDuration: 500ms
-
-      productClient:
-        maxAttempts: 3
-        waitDuration: 500ms
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics
+cart:
+  cache:
+    enabled: true
+    ttl-days: 14

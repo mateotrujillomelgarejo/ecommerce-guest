@@ -4,6 +4,7 @@ import org.springframework.web.bind.annotation.*;
 
 import lombok.RequiredArgsConstructor;
 import pe.takiq.ecommerce.cart_service.dto.request.AddItemRequestDTO;
+import pe.takiq.ecommerce.cart_service.dto.request.UpdateItemRequestDTO;
 import pe.takiq.ecommerce.cart_service.dto.response.CartResponseDTO;
 import pe.takiq.ecommerce.cart_service.mapper.CartMapper;
 import pe.takiq.ecommerce.cart_service.service.CartService;
@@ -16,28 +17,39 @@ public class CartController {
     private final CartService service;
     private final CartMapper mapper;
 
+    // Crear o recuperar carrito por sessionId
     @PostMapping
-    public CartResponseDTO createCart() {
-        return mapper.toResponse(service.createCart());
+    public CartResponseDTO getOrCreateCart(@RequestParam("sessionId") String sessionId) {
+        return mapper.toResponse(service.getOrCreateCart(sessionId));
     }
 
-    @GetMapping("/{cartId}")
-    public CartResponseDTO getCart(
-            @PathVariable("cartId") String cartId) {
-        return mapper.toResponse(service.getCartEntity(cartId));
+    // Obtener carrito (flujo paso 3.1)
+    @GetMapping
+    public CartResponseDTO getCart(@RequestParam("sessionId") String sessionId) {
+        return mapper.toResponse(service.getCartEntity(sessionId));
     }
 
-    @PostMapping("/{cartId}/items")
+    // Agregar ítem (flujo 2.1)
+    @PostMapping("/items")
     public CartResponseDTO addItem(
-            @PathVariable("cartId") String cartId,
+            @RequestParam("sessionId") String sessionId,
             @RequestBody AddItemRequestDTO request) {
-        return mapper.toResponse(service.addItem(cartId, request));
+        return mapper.toResponse(service.addItem(sessionId, request));
     }
 
-    @DeleteMapping("/{cartId}/items/{productId}")
+    // Actualizar cantidad o eliminar si quantity=0
+    @PatchMapping("/items")
+    public CartResponseDTO updateItem(
+            @RequestParam("sessionId") String sessionId,
+            @RequestBody UpdateItemRequestDTO request) {
+        return mapper.toResponse(service.updateItem(sessionId, request));
+    }
+
+    // Eliminar ítem específico
+    @DeleteMapping("/items/{productId}")
     public CartResponseDTO removeItem(
-            @PathVariable("cartId") String cartId,
+            @RequestParam("sessionId") String sessionId,
             @PathVariable("productId") String productId) {
-        return mapper.toResponse(service.removeItem(cartId, productId));
+        return mapper.toResponse(service.removeItem(sessionId, productId));
     }
 }

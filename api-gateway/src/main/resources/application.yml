@@ -35,6 +35,13 @@ spring:
               - Path=/api/inventory/**,/inventory/**
           filters:
               - StripPrefix=1
+
+        - id: customer-service
+          uri: ${CUSTOMER_SERVICE_URL:http://localhost:8085}
+          predicates:
+              - Path=/api/guests/**,/guests/**
+          filters:
+              - StripPrefix=1
         
 
   main:

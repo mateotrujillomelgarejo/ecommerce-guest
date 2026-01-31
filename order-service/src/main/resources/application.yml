@@ -40,10 +40,19 @@ resilience4j:
         failureRateThreshold: 50
         waitDurationInOpenState: 10s
         permittedNumberOfCallsInHalfOpenState: 3
+      pricingClient:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
 
   retry:
     instances:
       customerClient:
+        maxAttempts: 3
+        waitDuration: 500ms
+      pricingClient:
         maxAttempts: 3
         waitDuration: 500ms
 

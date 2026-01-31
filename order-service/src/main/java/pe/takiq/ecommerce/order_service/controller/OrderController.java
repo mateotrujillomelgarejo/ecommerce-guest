@@ -18,27 +18,24 @@ public class OrderController {
     @PostMapping
     public ResponseEntity<Order> createPendingOrder(
             @RequestBody CartDTO cart,
-            @RequestParam(name = "guestId", required = true) String guestId) {
-
-        if (cart == null || cart.getItems() == null || cart.getItems().isEmpty()) {
-            return ResponseEntity.badRequest().body(null);
-        }
-
+            @RequestParam String guestId) {
         Order order = orderService.createPendingOrderFromCart(cart, guestId);
         return ResponseEntity.ok(order);
     }
 
-
-    @PostMapping("/{orderId}/confirm")
-    public ResponseEntity<Order> confirmOrder(
-            @PathVariable("orderId") String orderId,
-            @RequestParam(name = "paymentId") String paymentId) {
-        Order confirmedOrder = orderService.confirmOrder(orderId, paymentId);
-        return ResponseEntity.ok(confirmedOrder);
+    @PostMapping("/{orderId}/confirm-payment")
+    public ResponseEntity<Order> confirmPayment(
+            @PathVariable String orderId,
+            @RequestParam String paymentId) {
+        Order confirmed = orderService.confirmPayment(orderId, paymentId);
+        return ResponseEntity.ok(confirmed);
     }
 
     @GetMapping("/{orderId}")
-    public ResponseEntity<Order> getOrder(@PathVariable("orderId") String orderId) {
-        return ResponseEntity.ok(orderService.getOrder(orderId));
+    public ResponseEntity<Order> getOrderForGuest(
+            @PathVariable String orderId,
+            @RequestParam String email) {
+        Order order = orderService.getOrderForGuest(orderId, email);
+        return ResponseEntity.ok(order);
     }
 }

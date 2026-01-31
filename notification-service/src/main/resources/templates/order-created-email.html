@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Confirmación de Pedido</title>
+</head>
+<body style="font-family: Arial, sans-serif; color: #333;">
+    <h1 style="color: #4CAF50;">¡Gracias por tu compra!</h1>
+    <p>Hemos recibido tu pedido correctamente.</p>
+    
+    <h3>Detalles del pedido</h3>
+    <p><strong>Número de pedido:</strong> <span th:text="${orderId}"></span></p>
+    <p><strong>Total:</strong> S/ <span th:text="${total}"></span></p>
+    
+    <h4>Productos:</h4>
+    <ul>
+        <li th:each="item : ${items}">
+            <span th:text="${item.productId} + ' - Cantidad: ' + ${item.quantity}"></span>
+        </li>
+    </ul>
+    
+    <p>Te avisaremos cuando tu pago sea confirmado.</p>
+    <p>¡Gracias por confiar en nosotros!</p>
+</body>
+</html>

@@ -6,7 +6,11 @@ import lombok.Data;
 
 @Data
 public class CartResponseDTO {
-    private String id;
+    private String id; // ahora sessionId
     private List<CartItemResponseDTO> items;
+    private Double subtotal;
+    private Double discount;
+    private Double tax;
+    private Double shippingEstimate;
     private Double total;
 }

@@ -12,6 +12,9 @@ import org.springframework.context.annotation.Primary;
 public class RabbitMQConfig {
 
     public static final String ORDER_EVENTS_EXCHANGE = "order.events.exchange";
+    public static final String ORDER_CREATED_QUEUE = "order.created.queue";
+    public static final String ROUTING_KEY_CREATED = "order.created";
+
     public static final String ORDER_CONFIRMED_QUEUE = "order.confirmed.queue";
     public static final String ROUTING_KEY_CONFIRMED = "order.confirmed";
 

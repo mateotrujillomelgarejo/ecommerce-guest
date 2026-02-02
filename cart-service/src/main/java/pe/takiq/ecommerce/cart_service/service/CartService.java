@@ -88,7 +88,7 @@ public class CartService {
         return saveCart(cart);
     }
 
-    // removeItem ya existe → solo cambiar sessionId por cartId
+
     public Cart removeItem(String sessionId, String productId) {
         Cart cart = getCartEntity(sessionId);
         cart.getItems().removeIf(i -> i.getProductId().equals(productId));

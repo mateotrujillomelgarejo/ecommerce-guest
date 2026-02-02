@@ -15,11 +15,19 @@ import java.util.List;
 public class OrderCreatedEvent {
 
     private String orderId;
+
     private String cartId;
+
+    private String sessionId;
+
     private String guestId;
+
     private String guestEmail;
+
     private Double totalAmount;
+
     private LocalDateTime createdAt;
+
     private String status;
 
     private List<OrderItemEvent> items;

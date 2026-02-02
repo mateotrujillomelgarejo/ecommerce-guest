@@ -2,7 +2,10 @@ package pe.takiq.ecommerce.order_service.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-
+import org.springframework.amqp.rabbit.annotation.QueueBinding;
+import org.springframework.amqp.core.ExchangeTypes;
+import org.springframework.amqp.rabbit.annotation.Exchange;
+import org.springframework.amqp.rabbit.annotation.Queue;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
@@ -19,12 +22,14 @@ import pe.takiq.ecommerce.order_service.dto.CartItemDTO;
 import pe.takiq.ecommerce.order_service.dto.CustomerDTO;
 import pe.takiq.ecommerce.order_service.dto.request.PriceCalculationRequest;
 import pe.takiq.ecommerce.order_service.dto.response.PriceCalculationResponse;
-import pe.takiq.ecommerce.events.OrderConfirmedEvent;
-import pe.takiq.ecommerce.events.OrderCreatedEvent;
-import pe.takiq.ecommerce.events.OrderShippedEvent;
 import pe.takiq.ecommerce.order_service.model.Order;
 import pe.takiq.ecommerce.order_service.model.OrderItem;
 import pe.takiq.ecommerce.order_service.repository.OrderRepository;
+import pe.takiq.ecommerce.events.OrderCreatedEvent;
+import pe.takiq.ecommerce.events.OrderConfirmedEvent;
+import pe.takiq.ecommerce.events.OrderShippedEvent;
+import pe.takiq.ecommerce.events.PaymentSucceededEvent;
+
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 
@@ -62,7 +67,7 @@ public class OrderService {
         Order order = new Order();
         order.setGuestId(guestId);
         order.setEmail(guest.getEmail());
-        order.setSessionId(cart.getId());
+        order.setSessionId(cart.getId());            // persistimos sessionId
         order.setStatus(Order.OrderStatus.PAYMENT_PENDING);
 
         // Mapear items
@@ -145,7 +150,7 @@ public class OrderService {
                 .orElse(null);
 
         if (order == null || order.getStatus().ordinal() >= Order.OrderStatus.SHIPPED.ordinal()) {
-            return; // ya procesado o no existe
+            return;
         }
 
         order.transitionTo(Order.OrderStatus.SHIPPED, null);
@@ -157,7 +162,90 @@ public class OrderService {
 
     @RabbitListener(queues = "order.delivered.queue")   // si shipping lo emite
     public void onOrderDelivered(OrderShippedEvent event) {
-        // similar...
+        Order order = repository.findById(event.getOrderId())
+            .orElse(null);
+
+        if (order == null || order.getStatus() == Order.OrderStatus.DELIVERED) {
+            return;
+        }
+
+        order.transitionTo(Order.OrderStatus.DELIVERED, null);
+        repository.save(order);
+    }
+
+    // Nuevo listener: escucha confirmación del payment-service (desacopla la orquestación)
+    @RabbitListener(bindings = @QueueBinding(
+            value = @Queue(value = "payment.succeeded.queue", durable = "true"),
+            exchange = @Exchange(value = RabbitMQConfig.ORDER_EVENTS_EXCHANGE, type = ExchangeTypes.TOPIC),
+            key = "payment.succeeded"
+    ))
+    @Transactional
+    public void onPaymentSucceeded(PaymentSucceededEvent event) {
+        log.info("PaymentSucceededEvent recibido → orderId={}, paymentId={}", event.getOrderId(), event.getPaymentId());
+        try {
+            // confirmPayment ya es idempotente con chequeo por paymentId
+            confirmPayment(event.getOrderId(), event.getPaymentId());
+        } catch (Exception e) {
+            log.error("Error procesando PaymentSucceededEvent orderId={}", event.getOrderId(), e);
+            throw e;
+        }
+    }
+
+    // ────────────────────────────────────────────────
+    //  Publish helpers
+    // ────────────────────────────────────────────────
+    private void publishOrderCreated(Order order) {
+
+        var event = OrderCreatedEvent.builder()
+                .orderId(order.getId())
+                .cartId(order.getSessionId())        // legacy field (if other services use cartId)
+                .sessionId(order.getSessionId())     // canonical sessionId
+                .guestId(order.getGuestId())         // importante: incluir guestId
+                .guestEmail(order.getEmail())
+                .totalAmount(order.getTotalAmount().doubleValue())
+                .status(order.getStatus().name())
+                .createdAt(order.getCreatedAt())
+                .items(order.getItems().stream()
+                        .map(i -> new OrderCreatedEvent.OrderItemEvent(
+                                i.getProductId(),
+                                i.getQuantity()
+                        ))
+                        .collect(Collectors.toList())
+                )
+                .build();
+
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.ORDER_EVENTS_EXCHANGE,
+                RabbitMQConfig.ROUTING_KEY_CREATED,
+                event
+        );
+    }
+
+    private void publishOrderConfirmed(Order order) {
+        var event = OrderConfirmedEvent.builder()
+                .orderId(order.getId())
+                .cartId(order.getSessionId())
+                .sessionId(order.getSessionId())
+                .guestId(order.getGuestId())
+                .guestEmail(order.getEmail())
+                .paymentId(order.getPaymentId())
+                .totalAmount(order.getTotalAmount().doubleValue())
+                .confirmedAt(LocalDateTime.now())
+                .status(order.getStatus().name())
+                .items(order.getItems().stream()
+                        .map(i -> new OrderConfirmedEvent.OrderItemEvent(
+                                i.getProductId(),
+                                i.getQuantity()
+                        ))
+                        .collect(Collectors.toList())
+                )
+                .build();
+
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.ORDER_EVENTS_EXCHANGE,
+                RabbitMQConfig.ROUTING_KEY_CONFIRMED,
+                event
+        );
     }
 
     // ────────────────────────────────────────────────
@@ -169,45 +257,5 @@ public class OrderService {
         } catch (FeignException e) {
             throw new IllegalArgumentException("Guest no válido o no encontrado: " + guestId, e);
         }
-    }
-
-private void publishOrderCreated(Order order) {
-
-    var event = OrderCreatedEvent.builder()
-            .orderId(order.getId())
-            .cartId(order.getSessionId())                 // ✔ cartId correcto
-            .guestEmail(order.getEmail())                 // ✔ email correcto
-            .totalAmount(order.getTotalAmount().doubleValue())
-            .status(order.getStatus().name())             // ✔ enum → string
-            .createdAt(order.getCreatedAt())              // ✔ timestamp
-            .items(order.getItems().stream()
-                    .map(i -> new OrderCreatedEvent.OrderItemEvent(
-                            i.getProductId(),
-                            i.getQuantity()
-                    ))
-                    .collect(Collectors.toList())
-            )
-            .build();
-
-    rabbitTemplate.convertAndSend(
-            RabbitMQConfig.ORDER_EVENTS_EXCHANGE,
-            RabbitMQConfig.ROUTING_KEY_CREATED,
-            event
-    );
-}
-
-
-    private void publishOrderConfirmed(Order order) {
-        var event = OrderConfirmedEvent.builder()
-                .orderId(order.getId())
-                .paymentId(order.getPaymentId())
-                .totalAmount(order.getTotalAmount().doubleValue())
-                .build();
-
-        rabbitTemplate.convertAndSend(
-                RabbitMQConfig.ORDER_EVENTS_EXCHANGE,
-                RabbitMQConfig.ROUTING_KEY_CONFIRMED,
-                event
-        );
     }
 }

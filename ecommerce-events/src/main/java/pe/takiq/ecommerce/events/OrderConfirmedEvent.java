@@ -16,6 +16,10 @@ public class OrderConfirmedEvent {
 
     private String orderId;
     private String cartId;
+
+    private String sessionId;
+    private String guestId; 
+
     private String guestEmail;
     private Double totalAmount;
     private String paymentId;

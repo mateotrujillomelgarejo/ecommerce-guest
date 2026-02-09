@@ -3,9 +3,8 @@ package pe.takiq.ecommerce.order_service.controller;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
 import pe.takiq.ecommerce.order_service.dto.CartDTO;
-import pe.takiq.ecommerce.order_service.model.Order;
+import pe.takiq.ecommerce.order_service.dto.OrderResponseDTO;
 import pe.takiq.ecommerce.order_service.service.OrderService;
 
 @RestController
@@ -16,26 +15,13 @@ public class OrderController {
     private final OrderService orderService;
 
     @PostMapping
-    public ResponseEntity<Order> createPendingOrder(
-            @RequestBody CartDTO cart,
-            @RequestParam String guestId) {
-        Order order = orderService.createPendingOrderFromCart(cart, guestId);
-        return ResponseEntity.ok(order);
+    public ResponseEntity<OrderResponseDTO> createOrder(@RequestBody CartDTO cartDTO) {
+        OrderResponseDTO response = orderService.createOrder(cartDTO);
+        return ResponseEntity.ok(response);
     }
 
-    @PostMapping("/{orderId}/confirm-payment")
-    public ResponseEntity<Order> confirmPayment(
-            @PathVariable String orderId,
-            @RequestParam String paymentId) {
-        Order confirmed = orderService.confirmPayment(orderId, paymentId);
-        return ResponseEntity.ok(confirmed);
-    }
-
-    @GetMapping("/{orderId}")
-    public ResponseEntity<Order> getOrderForGuest(
-            @PathVariable String orderId,
-            @RequestParam String email) {
-        Order order = orderService.getOrderForGuest(orderId, email);
-        return ResponseEntity.ok(order);
+    @GetMapping("/{id}")
+    public ResponseEntity<OrderResponseDTO> getOrder(@PathVariable String id) {
+        return ResponseEntity.ok(orderService.getOrder(id));
     }
 }

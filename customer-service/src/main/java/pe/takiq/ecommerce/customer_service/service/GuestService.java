@@ -10,9 +10,9 @@ import pe.takiq.ecommerce.customer_service.config.RabbitMQConfig;
 import pe.takiq.ecommerce.customer_service.dto.AddressRequestDTO;
 import pe.takiq.ecommerce.customer_service.dto.GuestRequestDTO;
 import pe.takiq.ecommerce.customer_service.dto.GuestResponseDTO;
+import pe.takiq.ecommerce.customer_service.events.GuestCreatedEvent;
 import pe.takiq.ecommerce.customer_service.model.Guest;
 import pe.takiq.ecommerce.customer_service.repository.GuestRepository;
-import pe.takiq.ecommerce.events.GuestCreatedEvent;
 
 import java.util.Optional;
 

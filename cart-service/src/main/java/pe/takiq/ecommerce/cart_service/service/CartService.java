@@ -60,7 +60,7 @@ public class CartService {
             throw new RuntimeException("Stock insuficiente");
         }
 
-        ProductDTO product = productClient.getProductById(req.getProductId());
+        ProductDTO product = productClient.getProduct(req.getProductId());
 
         // Buscar si ya existe → sumar cantidad
         Optional<CartItem> existing = cart.getItems().stream()
@@ -119,32 +119,60 @@ public class CartService {
 }
 
 
-    // Nuevo: cálculo completo con pricing-service
-    public CartResponseDTO toFullResponse(Cart cart) {
-        // Preparar request para pricing
-        PriceCalculationRequest pricingReq = new PriceCalculationRequest();
-        pricingReq.setItems(
-                cart.getItems().stream().map(i -> {
-                    var item = new PriceCalculationRequest.CartItem();
-                    item.setProductId(i.getProductId());
-                    item.setQuantity(i.getQuantity());
-                    return item;
-                }).toList()
-        );
+public CartResponseDTO toFullResponse(Cart cart) {
 
-        PriceCalculationResponse pricing = pricingClient.calculatePrice(pricingReq);
+    CartResponseDTO response = mapper.toResponse(cart);
 
-        CartResponseDTO response = mapper.toResponse(cart);
-
-        // Enriquecer con pricing real
-        response.setSubtotal(pricing.getSubtotal().doubleValue());
-        response.setDiscount(pricing.getDiscountAmount().doubleValue());
-        response.setTax(pricing.getTaxAmount().doubleValue());
-        response.setShippingEstimate(pricing.getShippingAmount().doubleValue());
-        response.setTotal(pricing.getTotal().doubleValue());
-
-        // Puedes mapear también los items con precios unitarios descontados si lo deseas
-
+    if (cart.getItems() == null || cart.getItems().isEmpty()) {
+        response.setSubtotal(0.0);
+        response.setDiscount(0.0);
+        response.setTax(0.0);
+        response.setShippingEstimate(0.0);
+        response.setTotal(0.0);
         return response;
     }
+
+    PriceCalculationRequest pricingReq = new PriceCalculationRequest();
+    pricingReq.setItems(
+        cart.getItems().stream().map(i -> {
+            var item = new PriceCalculationRequest.CartItem();
+            item.setProductId(i.getProductId());
+            item.setQuantity(i.getQuantity());
+            return item;
+        }).toList()
+    );
+
+    PriceCalculationResponse pricing = pricingClient.calculate(pricingReq);
+
+    response.setSubtotal(pricing.getSubtotal().doubleValue());
+    response.setDiscount(pricing.getDiscountAmount().doubleValue());
+    response.setTax(pricing.getTaxAmount().doubleValue());
+    response.setShippingEstimate(pricing.getShippingAmount().doubleValue());
+    response.setTotal(pricing.getTotal().doubleValue());
+
+    return response;
+}
+
+
+
+    public CartResponseDTO addItemFull(String sessionId, AddItemRequestDTO req) {
+        Cart cart = addItem(sessionId, req);
+        return toFullResponse(cart);
+    }
+
+    public CartResponseDTO updateItemFull(String sessionId, UpdateItemRequestDTO req) {
+        Cart cart = updateItem(sessionId, req);
+        return toFullResponse(cart);
+    }
+
+    public CartResponseDTO removeItemFull(String sessionId, String productId) {
+        Cart cart = removeItem(sessionId, productId);
+        return toFullResponse(cart);
+    }
+
+    public CartResponseDTO getCartFull(String sessionId) {
+        Cart cart = getCartEntity(sessionId);
+        return toFullResponse(cart);
+    }
+
 }

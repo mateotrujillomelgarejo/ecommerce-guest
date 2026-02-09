@@ -22,7 +22,7 @@ public class GuestController {
     }
 
     @GetMapping("/session/{sessionId}")
-    public ResponseEntity<GuestResponseDTO> getBySessionId(@PathVariable String sessionId) {
+    public ResponseEntity<GuestResponseDTO> getBySessionId(@PathVariable("sessionId") String sessionId) {
         return ResponseEntity.ok(service.getGuestBySessionId(sessionId));
     }
 
@@ -33,7 +33,7 @@ public class GuestController {
 
     @PostMapping("/{guestId}/address")
     public ResponseEntity<GuestResponseDTO> addAddress(
-            @PathVariable String guestId,
+            @PathVariable("guestId") String guestId,
             @Valid @RequestBody AddressRequestDTO request) {
         return ResponseEntity.ok(service.addAddress(guestId, request));
     }

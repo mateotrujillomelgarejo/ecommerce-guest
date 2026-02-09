@@ -1,94 +1,120 @@
 package pe.takiq.ecommerce.shipping_service.service;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import pe.takiq.ecommerce.events.OrderCreatedEvent;
-import pe.takiq.ecommerce.events.OrderShippedEvent;
+
+import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import pe.takiq.ecommerce.shipping_service.client.CustomerClient;
 import pe.takiq.ecommerce.shipping_service.config.RabbitMQConfig;
 import pe.takiq.ecommerce.shipping_service.dto.GuestResponseDTO;
 import pe.takiq.ecommerce.shipping_service.dto.ShippingCalculationRequest;
 import pe.takiq.ecommerce.shipping_service.dto.ShippingCalculationResponse;
+import pe.takiq.ecommerce.shipping_service.events.OrderCreatedEvent;
+import pe.takiq.ecommerce.shipping_service.events.OrderShippedEvent;
 import pe.takiq.ecommerce.shipping_service.model.Shipment;
 import pe.takiq.ecommerce.shipping_service.repository.ShipmentRepository;
-
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class ShippingService {
 
-    private final ShipmentRepository shipmentRepository;
+    private final ShipmentRepository repository;
     private final RabbitTemplate rabbitTemplate;
     private final CustomerClient customerClient;
 
-    // Quote síncrono (paso 5 del flujo)
-    public ShippingCalculationResponse calculateShipping(ShippingCalculationRequest request) {
-        BigDecimal orderTotal = request.getOrderTotal() != null ? request.getOrderTotal() : BigDecimal.ZERO;
-
-        BigDecimal cost = BigDecimal.ZERO;
-        String message = "Envío estándar a todo el Perú";
-
-        if (orderTotal.compareTo(new BigDecimal("300")) >= 0) {
-            cost = BigDecimal.ZERO;
-            message = "¡Envío gratis por superar S/ 300!";
-        } else if (orderTotal.compareTo(new BigDecimal("100")) >= 0) {
-            cost = new BigDecimal("10.00");
-        } else {
-            cost = new BigDecimal("15.00");
-        }
-
-        return new ShippingCalculationResponse(cost, "3-5 días hábiles", message);
+    public boolean existsShipment(String orderId) {
+        return repository.findByOrderId(orderId).isPresent();
     }
 
+    // ────────────────────────────────────────────────
+    // ASYNC – post pago
+    // ────────────────────────────────────────────────
     @Transactional
-    public void createShipmentFromOrder(OrderCreatedEvent event) {
-    GuestResponseDTO guest = customerClient.getGuest(event.getGuestId());
+    public void createAndShip(OrderCreatedEvent event) {
 
-    // 2. Usar los datos reales
-    Shipment shipment = Shipment.builder()
-            .orderId(event.getOrderId())
-            .postalCode(guest.getAddress() != null ? guest.getAddress().getPostalCode() : "LIMA01")
-            .addressStreet(guest.getAddress() != null ? guest.getAddress().getStreet() : "Dirección no proporcionada")
-            .addressCity(guest.getAddress() != null ? guest.getAddress().getCity() : "Lima")
-            .addressCountry(guest.getAddress() != null ? guest.getAddress().getCountry() : "Perú")
-            .shippingCost(calculateShippingCostFromTotal(BigDecimal.valueOf(event.getTotalAmount())))
-            .estimatedDelivery("3-5 días hábiles")
-            .status("SHIPPING_CREATED")
-            .shippedAt(LocalDateTime.now())
-            .build();
+        GuestResponseDTO guest = customerClient.getGuest(event.getGuestId());
 
-    shipmentRepository.save(shipment);
-
-
-        OrderShippedEvent shippedEvent = OrderShippedEvent.builder()
-        .orderId(event.getOrderId())
-        .trackingNumber(shipment.getTrackingNumber())
-        .carrier("Serpost")
-        .estimatedDelivery("3-5 días hábiles")
-        .shippedAt(LocalDateTime.now())
-        .message("Tu pedido ya está en camino")
-        .build();
-
-        // Publicar evento para que order-service actualice estado y notificaciones envíen email
-        rabbitTemplate.convertAndSend(
-                RabbitMQConfig.ORDER_EVENTS_EXCHANGE,
-                "order.shipped",
-                shippedEvent
+        BigDecimal shippingCost = calculateCost(
+                event.getTotal()
         );
 
-        log.info("Envío creado con tracking {} para orden {}", shipment.getTrackingNumber(), event.getOrderId());
+        Shipment shipment = Shipment.builder()
+                .orderId(event.getOrderId())
+                .postalCode(getPostal(guest))
+                .addressStreet(getStreet(guest))
+                .addressCity(getCity(guest))
+                .addressCountry(getCountry(guest))
+                .shippingCost(shippingCost)
+                .estimatedDelivery("3-5 días hábiles")
+                .status("SHIPPED")
+                .shippedAt(LocalDateTime.now())
+                .build();
+
+        shipment = repository.save(shipment);
+
+        publishShippedEvent(shipment, guest.getEmail());
+
+        log.info("Shipment creado y SHIPPED → orderId={}, tracking={}",
+                shipment.getOrderId(),
+                shipment.getTrackingNumber());
     }
 
-    private BigDecimal calculateShippingCostFromTotal(BigDecimal total) {
-        if (total == null) return new BigDecimal("15.00");
+    private void publishShippedEvent(Shipment s, String email) {
+
+        OrderShippedEvent event = OrderShippedEvent.builder()
+                .orderId(s.getOrderId())
+                .trackingNumber(s.getTrackingNumber())
+                .carrier("Serpost")
+                .estimatedDelivery(s.getEstimatedDelivery())
+                .shippedAt(s.getShippedAt())
+                .guestEmail(email)
+                .message("Tu pedido ya está en camino")
+                .build();
+
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.ORDER_EVENTS_EXCHANGE,
+                RabbitMQConfig.ROUTING_KEY_SHIPPED,
+                event
+        );
+    }
+
+    // ────────────────────────────────────────────────
+    // Quote síncrono
+    // ────────────────────────────────────────────────
+    public ShippingCalculationResponse calculateShipping(ShippingCalculationRequest req) {
+        BigDecimal total = req.getOrderTotal() != null ? req.getOrderTotal() : BigDecimal.ZERO;
+
+        BigDecimal cost = calculateCost(total);
+        String msg = cost.equals(BigDecimal.ZERO)
+                ? "¡Envío gratis por superar S/300!"
+                : "Envío estándar";
+
+        return new ShippingCalculationResponse(cost, "3-5 días hábiles", msg);
+    }
+
+    private BigDecimal calculateCost(BigDecimal total) {
         if (total.compareTo(new BigDecimal("300")) >= 0) return BigDecimal.ZERO;
         if (total.compareTo(new BigDecimal("100")) >= 0) return new BigDecimal("10.00");
         return new BigDecimal("15.00");
+    }
+
+    // Helpers guest
+    private String getPostal(GuestResponseDTO g) {
+        return g.getAddress() != null ? g.getAddress().getPostalCode() : "LIMA01";
+    }
+    private String getStreet(GuestResponseDTO g) {
+        return g.getAddress() != null ? g.getAddress().getStreet() : "Dirección no registrada";
+    }
+    private String getCity(GuestResponseDTO g) {
+        return g.getAddress() != null ? g.getAddress().getCity() : "Lima";
+    }
+    private String getCountry(GuestResponseDTO g) {
+        return g.getAddress() != null ? g.getAddress().getCountry() : "Perú";
     }
 }

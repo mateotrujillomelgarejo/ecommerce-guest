@@ -14,7 +14,9 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class OrderShippedEvent implements Serializable {
 
-    private String orderId;             // ID de la orden que ya fue enviada
+    private String orderId;         // ID de la orden que ya fue enviada
+
+    private String guestEmail;
 
     private String trackingNumber;      // Número de seguimiento generado por shipping-service
 

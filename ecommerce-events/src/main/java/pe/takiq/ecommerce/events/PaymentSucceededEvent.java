@@ -12,9 +12,10 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class PaymentSucceededEvent {
-    private String paymentId;
-    private String orderId;
+    private String orderId;           // Clave principal para que Order Service lo procese
+    private String paymentId;         // Idempotency key
     private Double amount;
     private String gateway;
     private LocalDateTime confirmedAt;
+    private String guestEmail;
 }

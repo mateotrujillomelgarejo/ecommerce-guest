@@ -1,43 +1,20 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
-<head>
-    <meta charset="UTF-8">
-    <title>Confirmación de Pago</title>
-</head>
-<body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
-    <div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
-        <h1 style="color: #4CAF50; text-align: center;">¡Pago Confirmado!</h1>
-        
-        <p>¡Excelente noticia! Tu pago ha sido procesado correctamente.</p>
-        
-        <h3>Detalles del pedido</h3>
-        <p><strong>Número de pedido:</strong> <span th:text="${orderId}"></span></p>
-        <p><strong>Total pagado:</strong> S/ <span th:text="${total}"></span></p>
-        <p><strong>Confirmado el:</strong> <span th:text="${confirmedAt}"></span></p>
-        <p th:if="${paymentId}"><strong>Referencia de pago:</strong> <span th:text="${paymentId}"></span></p>
-        
-        <h4>Productos comprados:</h4>
-        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-            <thead>
-                <tr style="background: #f5f5f5;">
-                    <th style="padding: 10px; border: 1px solid #ddd;">Producto</th>
-                    <th style="padding: 10px; border: 1px solid #ddd;">Cantidad</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr th:each="item : ${items}">
-                    <td style="padding: 10px; border: 1px solid #ddd;" th:text="${item.productId}"></td>
-                    <td style="padding: 10px; border: 1px solid #ddd; text-align: center;" th:text="${item.quantity}"></td>
-                </tr>
-            </tbody>
-        </table>
-        
-        <p>Tu pedido está siendo procesado y pronto te enviaremos información de envío.</p>
-        
-        <p style="text-align: center; margin-top: 30px; color: #777; font-size: 0.9em;">
-            Gracias por comprar con nosotros<br>
-            <strong>Tu Tienda - Lima, Perú</strong>
-        </p>
-    </div>
+<head><meta charset="UTF-8"><title>Tu pedido va en camino</title></head>
+<body style="font-family: Arial, sans-serif;">
+    <h1 style="color: #4CAF50;">¡Tu pedido ya está en camino! #<span th:text="${orderId}"></span></h1>
+    
+    <p>Tu compra ha sido enviada con el siguiente detalle:</p>
+    
+    <p><strong>Número de seguimiento:</strong> <span th:text="${trackingNumber}"></span></p>
+    <p><strong>Transportista:</strong> <span th:text="${carrier}"></span></p>
+    <p><strong>Entrega estimada:</strong> <span th:text="${estimatedDelivery}"></span></p>
+    
+    <p>Puedes seguir tu envío en cualquier momento.</p>
+    
+    <p style="margin-top: 30px; color: #555; font-size: 0.9em;">
+        Gracias por comprar con nosotros<br>
+        <strong>Tu Tienda - Lima, Perú</strong>
+    </p>
 </body>
 </html>

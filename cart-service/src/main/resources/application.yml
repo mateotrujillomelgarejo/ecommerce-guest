@@ -5,6 +5,9 @@ spring:
   application:
     name: cart-service
 
+  config:
+    import: optional:configserver:http://localhost:8888
+
   data:
     redis:
       host: localhost
@@ -34,7 +37,20 @@ product-service:
 inventory-service:
   url: ${INVENTORY_SERVICE_URL:http://localhost:8084}
 
+pricing-service:
+  url: ${PRICING_SERVICE_URL:http://localhost:8090}
+
 cart:
   cache:
     enabled: true
     ttl-days: 14
+
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+
+  instance:
+    prefer-ip-address: true

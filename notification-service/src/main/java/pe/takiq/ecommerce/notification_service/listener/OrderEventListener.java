@@ -5,9 +5,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 
-import pe.takiq.ecommerce.events.OrderCreatedEvent;
-import pe.takiq.ecommerce.events.OrderShippedEvent;
-import pe.takiq.ecommerce.events.OrderConfirmedEvent;
+import pe.takiq.ecommerce.notification_service.config.RabbitMQConfig;
+import pe.takiq.ecommerce.notification_service.events.OrderCreatedEvent;
+import pe.takiq.ecommerce.notification_service.events.OrderShippedEvent;
 import pe.takiq.ecommerce.notification_service.service.EmailNotificationService;
 
 @Slf4j
@@ -17,36 +17,24 @@ public class OrderEventListener {
 
     private final EmailNotificationService emailService;
 
-    @RabbitListener(queues = "notification.queue")
-    public void handleOrderCreated(OrderCreatedEvent event) {
-        log.info("Evento OrderCreated recibido - orderId={}", event.getOrderId());
-        try {
-            emailService.sendOrderCreatedNotification(event);
-        } catch (Exception e) {
-            log.error("Fallo al enviar email OrderCreated - orderId={}", event.getOrderId(), e);
-            throw e;
-        }
+    @RabbitListener(queues = RabbitMQConfig.ORDER_CREATED_QUEUE)
+    public void onOrderCreated(OrderCreatedEvent event) {
+        log.info("Enviando email de confirmación de pedido recibido y pagado → orderId: {}", event.getOrderId());
+        emailService.sendOrderCreatedNotification(event);
     }
 
-    @RabbitListener(queues = "notification.queue")
-    public void handleOrderConfirmed(OrderConfirmedEvent event) {
-        log.info("Evento OrderConfirmed recibido - orderId={}", event.getOrderId());
-        try {
-            emailService.sendOrderConfirmedNotification(event);
-        } catch (Exception e) {
-            log.error("Fallo al enviar email OrderConfirmed - orderId={}", event.getOrderId(), e);
-            throw e;
-        }
+    @RabbitListener(queues = RabbitMQConfig.ORDER_SHIPPED_QUEUE)
+    public void onOrderShipped(OrderShippedEvent event) {
+        log.info("Enviando email de envío → orderId: {}, tracking: {}", 
+                 event.getOrderId(), event.getTrackingNumber());
+        emailService.sendShippingConfirmation(event);
     }
 
-    @RabbitListener(queues = "notification.queue")
-    public void handleOrderShipped(OrderShippedEvent event) {
-        log.info("Evento OrderShipped recibido - orderId={}", event.getOrderId());
-        try {
-            emailService.sendShippingConfirmation(event.getOrderId(), event.getTrackingNumber());
-        } catch (Exception e) {
-            log.error("Fallo al enviar email OrderShipped - orderId={}", event.getOrderId(), e);
-            throw e;
-        }
+    // Opcional – si Shipping publica order.delivered en el futuro
+    /*
+    @RabbitListener(queues = "notification.order-delivered.queue")
+    public void onOrderDelivered(OrderDeliveredEvent event) {
+        emailService.sendOrderDeliveredNotification(event);
     }
+    */
 }

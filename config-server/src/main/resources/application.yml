@@ -1,0 +1,19 @@
+server:
+  port: 8888
+
+spring:
+  application:
+    name: config-server
+  cloud:
+    config:
+      server:
+        git:
+          uri: https://github.com/mateotrujillomelgarejo/ecommerce-config-repo  # Crea un repo Git con archivos como cart-service.yml
+          search-paths: '{application}'  # Busca por nombre de servicio
+          default-label: main  # Rama principal
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

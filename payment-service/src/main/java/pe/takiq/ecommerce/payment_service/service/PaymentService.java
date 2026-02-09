@@ -1,31 +1,41 @@
+// ────────────────────────────────────────────────
+// pe.takiq.ecommerce.payment_service.service.PaymentService.java
+// ────────────────────────────────────────────────
 package pe.takiq.ecommerce.payment_service.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import pe.takiq.ecommerce.payment_service.dto.PaymentRequest;
 import pe.takiq.ecommerce.payment_service.dto.PaymentResponse;
+import pe.takiq.ecommerce.payment_service.events.PaymentSucceededEvent;
 import pe.takiq.ecommerce.payment_service.model.PaymentTransaction;
 import pe.takiq.ecommerce.payment_service.repository.PaymentTransactionRepository;
-import pe.takiq.ecommerce.events.PaymentSucceededEvent;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class PaymentService {
 
     private final PaymentTransactionRepository transactionRepository;
     private final RabbitTemplate rabbitTemplate;
 
-    // Exchange / routing key (usar mismo exchange que order-service)
     private static final String ORDER_EVENTS_EXCHANGE = "order.events.exchange";
     private static final String ROUTING_KEY_PAYMENT_SUCCEEDED = "payment.succeeded";
 
+    @Transactional
     public PaymentResponse initiatePayment(PaymentRequest request) {
+        // Validación básica
+        if (request.getOrderId() == null || request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("orderId y amount son obligatorios y amount > 0");
+        }
+
         String paymentId = UUID.randomUUID().toString();
 
         PaymentTransaction tx = new PaymentTransaction();
@@ -33,47 +43,70 @@ public class PaymentService {
         tx.setOrderId(request.getOrderId());
         tx.setAmount(request.getAmount());
         tx.setStatus("PENDING");
-        tx.setGateway("SIMULATED");
+        tx.setGateway("SIMULATED"); // → cambiar a "STRIPE", etc. cuando integres real
 
         transactionRepository.save(tx);
+
+        log.info("Pago iniciado → paymentId={}, orderId={}, amount={}", 
+                 paymentId, request.getOrderId(), request.getAmount());
 
         PaymentResponse response = new PaymentResponse();
         response.setPaymentId(paymentId);
         response.setStatus("PENDING");
-        response.setRedirectUrl("http://localhost:8080/checkout/success?paymentId=" + paymentId); // Simulado
-        response.setMessage("Pago iniciado - simulado");
+        response.setRedirectUrl(request.getReturnUrl() + "?paymentId=" + paymentId + "&status=pending");
+        response.setMessage("Pago iniciado. Completa el proceso en la pasarela.");
 
         return response;
     }
 
-    // Método para simular confirmación (llamado manual o por webhook simulado)
+    @Transactional
     public void confirmPayment(String paymentId) {
         PaymentTransaction tx = transactionRepository.findByPaymentId(paymentId)
-                .orElseThrow(() -> new RuntimeException("Transacción no encontrada"));
+                .orElseThrow(() -> new RuntimeException("Transacción no encontrada: " + paymentId));
 
-        // Idempotencia: si ya SUCCESS, devolver sin re-publicar
+        // Idempotencia fuerte
         if ("SUCCESS".equals(tx.getStatus())) {
-            log.info("Pago {} ya estaba confirmado (idempotencia)", paymentId);
+            log.info("Pago {} ya confirmado previamente (idempotencia)", paymentId);
             return;
         }
 
-        if ("PENDING".equals(tx.getStatus())) {
-            tx.setStatus("SUCCESS");
-            transactionRepository.save(tx);
-
-            // Publicar evento de confirmación para que order-service lo escuche y confirme la orden (desacoplado)
-            PaymentSucceededEvent event = PaymentSucceededEvent.builder()
-                    .paymentId(tx.getPaymentId())
-                    .orderId(tx.getOrderId())
-                    .amount(tx.getAmount().doubleValue())
-                    .gateway(tx.getGateway())
-                    .confirmedAt(LocalDateTime.now())
-                    .build();
-
-            rabbitTemplate.convertAndSend(ORDER_EVENTS_EXCHANGE, ROUTING_KEY_PAYMENT_SUCCEEDED, event);
-            log.info("PaymentSucceededEvent publicado para paymentId={}, orderId={}", tx.getPaymentId(), tx.getOrderId());
-        } else {
-            throw new IllegalStateException("Transacción en estado inválido para confirmación: " + tx.getStatus());
+        if (!"PENDING".equals(tx.getStatus())) {
+            throw new IllegalStateException("No se puede confirmar transacción en estado: " + tx.getStatus());
         }
+
+        // Simulación de aprobación (en real: callback del gateway)
+        tx.setStatus("SUCCESS");
+        tx.setUpdatedAt(LocalDateTime.now());
+        transactionRepository.save(tx);
+
+        // Publicar evento → Order Service lo escuchará y pasará a PAID + publicará order.created
+        PaymentSucceededEvent event = PaymentSucceededEvent.builder()
+                .orderId(tx.getOrderId())
+                .paymentId(tx.getPaymentId())
+                .amount(tx.getAmount().doubleValue())
+                .gateway(tx.getGateway())
+                .confirmedAt(LocalDateTime.now())
+                .build();
+
+        rabbitTemplate.convertAndSend(ORDER_EVENTS_EXCHANGE, ROUTING_KEY_PAYMENT_SUCCEEDED, event);
+
+        log.info("Pago confirmado → evento payment.succeeded publicado para orderId={}, paymentId={}", 
+                 tx.getOrderId(), paymentId);
+    }
+
+    // Para testing: simular fallo
+    public void failPayment(String paymentId) {
+        PaymentTransaction tx = transactionRepository.findByPaymentId(paymentId)
+                .orElseThrow(() -> new RuntimeException("Transacción no encontrada"));
+
+        if ("SUCCESS".equals(tx.getStatus())) {
+            throw new IllegalStateException("No se puede fallar un pago ya exitoso");
+        }
+
+        tx.setStatus("FAILED");
+        transactionRepository.save(tx);
+
+        log.warn("Pago fallido manualmente → paymentId={}", paymentId);
+        // Opcional: publicar payment.failed si lo necesitas en el futuro
     }
 }

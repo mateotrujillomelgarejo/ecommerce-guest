@@ -5,63 +5,68 @@ spring:
   application:
     name: api-gateway
 
+  config:
+    import: optional:configserver:http://localhost:8888
+
   cloud:
     gateway:
+      discovery:
+        locator:
+          enabled: false  # Mantenemos desactivado para rutas manuales
       routes:
         - id: product-service
-          uri: ${PRODUCT_SERVICE_URL:http://localhost:8081}
+          uri: lb://PRODUCT-SERVICE
           predicates:
-            - Path=/api/products/**,/products/**
-          filters:
-            - StripPrefix=1
+            - Path=/products/**
 
         - id: cart-service
-          uri: ${CART_SERVICE_URL:http://localhost:8082}
+          uri: lb://CART-SERVICE
           predicates:
-            - Path=/api/cart/**,/cart/**
-          filters:
-            - StripPrefix=1
+            - Path=/cart/**
 
         - id: order-service
-          uri: ${ORDER_SERVICE_URL:http://localhost:8083}
+          uri: lb://ORDER-SERVICE
           predicates:
-            - Path=/api/orders/**,/orders/**
-          filters:
-            - StripPrefix=1
-
-        - id: inventory-service
-          uri: ${INVENTORY_SERVICE_URL:http://localhost:8084}
-          predicates:
-              - Path=/api/inventory/**,/inventory/**
-          filters:
-              - StripPrefix=1
+            - Path=/orders/**
 
         - id: customer-service
-          uri: ${CUSTOMER_SERVICE_URL:http://localhost:8085}
+          uri: lb://CUSTOMER-SERVICE
           predicates:
-              - Path=/api/guests/**,/guests/**
-          filters:
-              - StripPrefix=1
-        
+            - Path=/guests/**
 
-  main:
-    web-application-type: reactive
+        - id: inventory-service
+          uri: lb://INVENTORY-SERVICE
+          predicates:
+            - Path=/inventory/**
 
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:default}
+        - id: pricing-service
+          uri: lb://PRICING-SERVICE
+          predicates:
+            - Path=/pricing/**
 
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics,gateway
+        - id: shipping-service
+          uri: lb://SHIPPING-SERVICE
+          predicates:
+            - Path=/shipping/**
+
+        - id: payment-service
+          uri: lb://PAYMENT-SERVICE
+          predicates:
+            - Path=/payments/**
+
+# Eureka client - FORZAR FULL REGISTRY CADA VEZ (mantengo igual)
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+    registry-fetch-interval-seconds: 5
+    disable-delta: true
+    use-dns-for-fetching-service-urls: false
+    eureka-server-connect-timeout-seconds: 10
 
 logging:
   level:
-    org.springframework.cloud.gateway: INFO   # DEBUG solo cuando depures
-
-  web:
-    cors:
-      allowed-origins: "*"
-      allowed-methods: "*"
-      allowed-headers: "*"
+    com.netflix.discovery: DEBUG
+    org.springframework.cloud.gateway: DEBUG

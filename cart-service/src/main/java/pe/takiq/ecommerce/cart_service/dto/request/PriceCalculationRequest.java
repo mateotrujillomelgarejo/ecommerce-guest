@@ -8,8 +8,8 @@ import java.util.List;
 public class PriceCalculationRequest {
 
     private List<CartItem> items;
-    private String couponCode;   // opcional
-    private String customerType; // GUEST, REGISTERED, VIP
+    private String couponCode;
+    private String customerType;
 
     @Data
     public static class CartItem {

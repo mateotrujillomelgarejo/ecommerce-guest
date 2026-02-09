@@ -5,6 +5,9 @@ spring:
   application:
     name: inventory-service
 
+  config:
+    import: optional:configserver:http://localhost:8888
+
   datasource:
     url: jdbc:postgresql://localhost:5432/inventory_db
     username: inventory_user
@@ -46,3 +49,13 @@ management:
   endpoint:
     health:
       show-details: always
+
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+
+  instance:
+    prefer-ip-address: true

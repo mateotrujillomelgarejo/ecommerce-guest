@@ -17,7 +17,7 @@ public class RabbitMQConfig {
     public static final String QUEUE_PAYMENT_SUCCEEDED = "order.payment.succeeded.queue";
     public static final String QUEUE_INVENTORY_FAILED = "order.inventory.failed.queue";
     public static final String QUEUE_ORDER_SHIPPED = "order.shipped.queue";
-    public static final String QUEUE_ORDER_DELIVERED = "order.delivered.queue"; // Agregado para delivered
+    public static final String QUEUE_ORDER_DELIVERED = "order.delivered.queue";
 
     public static final String ROUTING_PAYMENT_SUCCEEDED = "payment.succeeded";
     public static final String ROUTING_INVENTORY_FAILED = "inventory.failed";

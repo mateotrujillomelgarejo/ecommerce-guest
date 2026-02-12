@@ -11,7 +11,7 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class RabbitMQConfig {
 
-    public static final String ORDER_EVENTS_EXCHANGE = "order.events.exchange";
+    public static final String ORDER_EVENTS_EXCHANGE = "ecommerce.events";
 
     public static final String ORDER_CREATED_QUEUE = "shipping.order-created.queue";
     public static final String ORDER_CREATED_DLQ   = "shipping.order-created.dlq";

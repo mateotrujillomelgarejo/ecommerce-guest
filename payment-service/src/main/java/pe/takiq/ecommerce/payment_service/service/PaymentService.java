@@ -6,8 +6,13 @@ package pe.takiq.ecommerce.payment_service.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+
+import pe.takiq.ecommerce.payment_service.dto.DirectPaymentRequest;
 import pe.takiq.ecommerce.payment_service.dto.PaymentRequest;
 import pe.takiq.ecommerce.payment_service.dto.PaymentResponse;
 import pe.takiq.ecommerce.payment_service.events.PaymentSucceededEvent;
@@ -26,8 +31,53 @@ public class PaymentService {
     private final PaymentTransactionRepository transactionRepository;
     private final RabbitTemplate rabbitTemplate;
 
-    private static final String ORDER_EVENTS_EXCHANGE = "order.events.exchange";
+    private static final String ORDER_EVENTS_EXCHANGE = "ecommerce.events";
     private static final String ROUTING_KEY_PAYMENT_SUCCEEDED = "payment.succeeded";
+
+@Transactional
+    public PaymentResponse simulateDirectSuccess(DirectPaymentRequest request) {
+        // Validaciones mínimas
+        if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("amount es obligatorio y > 0");
+        }
+        if (request.getGuestId() == null || request.getGuestId().isBlank()) {
+            throw new IllegalArgumentException("guestId es obligatorio");
+        }
+
+        String paymentId = UUID.randomUUID().toString();
+
+        PaymentTransaction tx = new PaymentTransaction();
+        tx.setPaymentId(paymentId);
+        tx.setAmount(request.getAmount());
+        tx.setStatus("SUCCESS");
+        tx.setGateway("SIMULATED_DIRECT");
+        tx.setGuestEmail(request.getGuestEmail() != null ? request.getGuestEmail() : "unknown");
+
+        transactionRepository.save(tx);
+
+        // Publicar evento inmediatamente
+        PaymentSucceededEvent event = PaymentSucceededEvent.builder()
+                .orderId(null)
+                .paymentId(paymentId)
+                .amount(request.getAmount().doubleValue())
+                .gateway(tx.getGateway())
+                .confirmedAt(LocalDateTime.now())
+                .guestEmail(request.getGuestEmail())
+                .build();
+
+        rabbitTemplate.convertAndSend(ORDER_EVENTS_EXCHANGE, ROUTING_KEY_PAYMENT_SUCCEEDED, event);
+
+        log.info("Pago simulado directo → paymentId={}, amount={}, guestId={}", 
+                 paymentId, request.getAmount(), request.getGuestId());
+
+        PaymentResponse response = new PaymentResponse();
+        response.setPaymentId(paymentId);
+        response.setStatus("SUCCEEDED");
+        response.setMessage("Pago simulado exitoso de forma directa");
+        response.setRedirectUrl(null);
+
+        return response;
+    }
 
     @Transactional
     public PaymentResponse initiatePayment(PaymentRequest request) {

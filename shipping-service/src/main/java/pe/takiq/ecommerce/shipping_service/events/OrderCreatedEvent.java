@@ -17,6 +17,7 @@ public class OrderCreatedEvent {
 
     private String orderId;
     private String guestId;
+    private String sessionId;
     private String guestEmail;
     private BigDecimal subtotal;
     private BigDecimal discount;

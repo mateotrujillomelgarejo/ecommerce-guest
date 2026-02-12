@@ -14,7 +14,7 @@ public class CorsConfig {
         CorsConfiguration config = new CorsConfiguration();
         
         // ¡Muy importante! Pon aquí los orígenes permitidos
-        config.addAllowedOrigin("http://localhost:4200");      // Angular dev
+        config.addAllowedOrigin("http://localhost:3000");      // Angular dev
         config.addAllowedOrigin("http://localhost:8080");      // si pruebas en mismo puerto
         // config.addAllowedOrigin("https://tu-dominio.com");  // producción
         

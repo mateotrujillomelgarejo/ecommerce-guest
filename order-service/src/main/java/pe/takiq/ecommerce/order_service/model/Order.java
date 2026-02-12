@@ -16,7 +16,7 @@ public class Order {
     private String id = UUID.randomUUID().toString();
 
     private String guestId; // Asociado a guest
-
+    
     @ElementCollection
     private List<OrderItem> items;
 

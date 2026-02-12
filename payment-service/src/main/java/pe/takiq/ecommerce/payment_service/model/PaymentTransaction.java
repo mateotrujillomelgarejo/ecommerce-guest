@@ -24,6 +24,7 @@ public class PaymentTransaction {
     private String gateway;             // "STRIPE", "MERCADO_PAGO", "SIMULATED"
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private String guestEmail;
 
     @PrePersist
     protected void onCreate() {

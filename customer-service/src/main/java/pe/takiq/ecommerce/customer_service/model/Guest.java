@@ -16,6 +16,8 @@ public class Guest {
     private String sessionId;
 
     private String name;
+
+    @Column(unique = true)
     private String email;
     private String phone;
 

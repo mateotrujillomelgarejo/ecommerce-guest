@@ -6,9 +6,12 @@ package pe.takiq.ecommerce.payment_service.controller;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import pe.takiq.ecommerce.payment_service.dto.DirectPaymentRequest;
 import pe.takiq.ecommerce.payment_service.dto.PaymentRequest;
 import pe.takiq.ecommerce.payment_service.dto.PaymentResponse;
 import pe.takiq.ecommerce.payment_service.service.PaymentService;
+
 
 @RestController
 @RequestMapping("/payments")
@@ -17,16 +20,26 @@ public class PaymentController {
 
     private final PaymentService paymentService;
 
+    @PostMapping
+    public ResponseEntity<PaymentResponse> simulateDirectSuccess(@RequestBody DirectPaymentRequest request) {
+        PaymentResponse response = paymentService.simulateDirectSuccess(request);
+        return ResponseEntity.ok(response);
+    }
+    
+
     /**
      * Inicia el proceso de pago (llamado por frontend después de crear orden pendiente)
      * Devuelve paymentId y redirectUrl (o instrucción para 3DS/simulado)
      */
+    
     @PostMapping("/initiate")
     public ResponseEntity<PaymentResponse> initiatePayment(@RequestBody PaymentRequest request) {
         PaymentResponse response = paymentService.initiatePayment(request);
         return ResponseEntity.ok(response);
     }
+    
 
+    
     /**
      * Endpoint para simular confirmación del pago (en producción sería webhook del gateway)
      * Aquí se publica el evento payment.succeeded

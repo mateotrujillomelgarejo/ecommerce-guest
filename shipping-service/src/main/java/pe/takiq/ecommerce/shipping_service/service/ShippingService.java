@@ -38,7 +38,7 @@ public class ShippingService {
     @Transactional
     public void createAndShip(OrderCreatedEvent event) {
 
-        GuestResponseDTO guest = customerClient.getGuest(event.getGuestId());
+        GuestResponseDTO guest = customerClient.getGuestBySessionId(event.getSessionId());
 
         BigDecimal shippingCost = calculateCost(
                 event.getTotal()

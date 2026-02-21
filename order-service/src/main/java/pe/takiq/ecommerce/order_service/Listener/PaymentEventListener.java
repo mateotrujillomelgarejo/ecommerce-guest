@@ -5,6 +5,7 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Component;
 
+import org.springframework.transaction.annotation.Transactional;
 import pe.takiq.ecommerce.order_service.config.RabbitMQConfig;
 import pe.takiq.ecommerce.order_service.event.OrderCreatedEvent;
 import pe.takiq.ecommerce.order_service.event.PaymentSucceededEvent;
@@ -21,6 +22,7 @@ public class PaymentEventListener {
     private final OrderRepository orderRepository;
     private final RabbitTemplate rabbitTemplate;
 
+    @Transactional
     @RabbitListener(queues = RabbitMQConfig.QUEUE_PAYMENT_SUCCEEDED)
     public void handlePaymentSucceeded(PaymentSucceededEvent event) {
         Order order = orderRepository.findById(event.getOrderId())

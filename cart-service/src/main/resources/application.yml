@@ -40,10 +40,10 @@ inventory-service:
 pricing-service:
   url: ${PRICING_SERVICE_URL:http://localhost:8090}
 
-cart:
-  cache:
-    enabled: true
-    ttl-days: 14
+  cart:
+    cache:
+      enabled: true
+      ttl-days: 14
 
 eureka:
   client:

@@ -51,10 +51,10 @@ resilience4j:
         waitDuration: 500ms
 
 notification:
-  from: "Tu Tienda <no-reply@tutienda.pe>"
-  subject:
-    order-created: "¡Recibimos tu pedido! #{orderId}"
-    order-confirmed: "¡Pago confirmado! Tu pedido #{orderId} está en proceso"
+    from: "Tu Tienda <no-reply@tutienda.pe>"
+    subject:
+      order-created: "¡Recibimos tu pedido! #{orderId}"
+      order-confirmed: "¡Pago confirmado! Tu pedido #{orderId} está en proceso"
 
 eureka:
   client:

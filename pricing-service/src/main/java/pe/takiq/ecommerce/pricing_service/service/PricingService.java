@@ -1,7 +1,6 @@
 package pe.takiq.ecommerce.pricing_service.service;
 
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
-import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
@@ -94,7 +93,6 @@ public class PricingService {
     }
 
     @CircuitBreaker(name = "productClient", fallbackMethod = "productPriceFallback")
-    @Retry(name = "productClient")
     @Cacheable(value = "productPrices", key = "#productId")
     protected BigDecimal getProductPrice(String productId) {
         ProductPriceDTO dto = productClient.getProductPrice(productId);
@@ -102,8 +100,8 @@ public class PricingService {
     }
 
     protected BigDecimal productPriceFallback(String productId, Throwable t) {
-        log.warn("No se pudo obtener precio de producto {}. Usando fallback 0.", productId, t);
-        return ZERO;
+        log.error("Fallo crítico: No se pudo obtener el precio del producto {}.", productId, t);
+        throw new RuntimeException("Servicio de catálogo de precios temporalmente no disponible. Intente en unos minutos.");
     }
 
     private BigDecimal applyProductPromotions(BigDecimal basePrice, String productId) {

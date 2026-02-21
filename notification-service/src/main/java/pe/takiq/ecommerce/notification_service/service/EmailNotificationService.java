@@ -23,18 +23,28 @@ public class EmailNotificationService {
 
     private final JavaMailSender mailSender;
     private final TemplateEngine templateEngine;
-    private final RetryTemplate retryTemplate;   // o el que uses
+    private final RetryTemplate retryTemplate;
 
     @Value("${notification.from}")
     private String fromEmail;
 
     public void sendOrderCreatedNotification(OrderCreatedEvent event) {
+        if (event.getGuestEmail() == null || event.getGuestEmail().isBlank()) {
+            log.error("ERROR: El email del cliente vino nulo para la orden {}. Abortando envío.", event.getOrderId());
+            return;
+        }
+        
         String subject = "¡Tu pedido está confirmado! #" + event.getOrderId();
         String htmlContent = buildOrderCreatedTemplate(event);
         sendEmail(event.getGuestEmail(), subject, htmlContent);
     }
 
     public void sendShippingConfirmation(OrderShippedEvent event) {
+        if (event.getGuestEmail() == null || event.getGuestEmail().isBlank()) {
+            log.error("ERROR: El email del cliente vino nulo para el envío {}. Abortando envío.", event.getOrderId());
+            return;
+        }
+
         String subject = "¡Tu pedido #" + event.getOrderId() + " ya está en camino!";
         
         Context context = new Context();
@@ -49,9 +59,10 @@ public class EmailNotificationService {
     }
 
     private String buildOrderCreatedTemplate(OrderCreatedEvent event) {
+        String formattedTotal = event.getTotal() != null ? String.format("%.2f", event.getTotal()) : "0.00";
         Context context = new Context();
         context.setVariable("orderId", event.getOrderId());
-        context.setVariable("total", String.format("%.2f", event.getTotal()));
+        context.setVariable("total", formattedTotal);
         context.setVariable("items", event.getItems());
         context.setVariable("createdAt", event.getCreatedAt());
         // Agrega más si quieres: guestName, dirección, etc.

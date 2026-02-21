@@ -8,7 +8,7 @@ import org.springframework.stereotype.Service;
 import jakarta.transaction.Transactional;
 import pe.takiq.ecommerce.order_service.client.CustomerClient;
 import pe.takiq.ecommerce.order_service.config.RabbitMQConfig;
-import pe.takiq.ecommerce.order_service.dto.CartDTO;
+import pe.takiq.ecommerce.order_service.dto.CreatePendingOrderRequest;
 import pe.takiq.ecommerce.order_service.dto.CartItemDTO;
 import pe.takiq.ecommerce.order_service.dto.CreateOrderRequest;
 import pe.takiq.ecommerce.order_service.dto.GuestResponseDTO;
@@ -47,13 +47,16 @@ public class OrderService {
             throw new IllegalArgumentException("sessionId es obligatorio");
         }
 
+        GuestResponseDTO guest = customerClient.getGuestBySessionId(request.getSessionId());
+
         Order order = new Order();
         order.setGuestId(request.getGuestId());
+        order.setSessionId(request.getSessionId());
+        order.setGuestEmail(guest.getEmail());
         order.setTotalAmount(request.getTotal());
         order.setPaymentId(request.getPaymentId());
         order.setStatus(OrderStatus.PAID);
 
-        // Mapear items SOLO si existen
         if (request.getItems() != null && !request.getItems().isEmpty()) {
             List<OrderItem> orderItems = request.getItems().stream()
                 .map(dto -> {
@@ -66,30 +69,20 @@ public class OrderService {
                 .collect(Collectors.toList());
             order.setItems(orderItems);
         } else {
-            // Opcional: si quieres permitir órdenes sin items, dejar null o lista vacía
-            order.setItems(new ArrayList<>()); // o dejarlo null si tu modelo lo permite
+            order.setItems(new ArrayList<>());
         }
 
         order = repository.save(order);
-
-        // Obtener guestEmail
-        String guestEmail;
-        // Opción A: Agregar guestEmail al CreateOrderRequest y usarlo directamente
-        // guestEmail = request.getGuestEmail(); // Asumiendo que lo agregas al DTO
-
-        // Opción B: Consultar customer-service con guestId o sessionId (agrega CustomerClient)
-        GuestResponseDTO guest = customerClient.getGuestBySessionId(request.getSessionId());
-        guestEmail = guest.getEmail();
 
         // Construir OrderCreatedEvent COMPLETO
         OrderCreatedEvent event = OrderCreatedEvent.builder()
             .orderId(order.getId())
             .guestId(order.getGuestId())
-            .sessionId(request.getSessionId())         // ← CRÍTICO: agregar esto
-            .guestEmail(guestEmail)                    // ← CRÍTICO: agregar esto
-            .subtotal(request.getTotal())              // o calcular si tienes subtotal separado
-            .discount(BigDecimal.ZERO)                 // Ajusta si tienes discounts
-            .tax(BigDecimal.ZERO)                      // Ajusta si tienes taxes
+            .sessionId(order.getSessionId())
+            .guestEmail(order.getGuestEmail())
+            .subtotal(request.getTotal())
+            .discount(BigDecimal.ZERO)
+            .tax(BigDecimal.ZERO)
             .shippingCost(request.getShippingCost() != null ? request.getShippingCost() : BigDecimal.ZERO)
             .total(order.getTotalAmount())
             .items(
@@ -121,7 +114,6 @@ public class OrderService {
         response.setPaymentId(order.getPaymentId());
         response.setStatus(order.getStatus());
         response.setCreatedAt(order.getCreatedAt());
-        // Si quieres incluir items en la respuesta también puedes mapearlos aquí
         if (order.getItems() != null) {
             response.setItems(order.getItems().stream()
                 .map(oi -> {
@@ -137,29 +129,95 @@ public class OrderService {
         return response;
     }
 
-    //por ahora este se dejara de lado y no se utilizara
-    public OrderResponseDTO createOrder(CartDTO cartDTO) {
+
+    @Transactional
+    public OrderResponseDTO createPendingOrder(CreatePendingOrderRequest request) {
+        if (request.getTotal() == null || request.getTotal().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("total es obligatorio y > 0");
+        }
+        if (request.getGuestId() == null) {
+            throw new IllegalArgumentException("guestId es obligatorio");
+        }
+        if (request.getSessionId() == null) {
+            throw new IllegalArgumentException("sessionId es obligatorio");
+        }
+
+        GuestResponseDTO guest = customerClient.getGuestBySessionId(request.getSessionId());
+
         Order order = new Order();
-        order.setGuestId(cartDTO.getGuestId());
-        order.setTotalAmount(cartDTO.getTotal());
-        order.setItems(cartDTO.getItems().stream()
-                .map(item -> {
-                    OrderItem oi = new OrderItem();
-                    oi.setProductId(item.getProductId());
-                    oi.setQuantity(item.getQuantity());
-                    oi.setPrice(item.getPrice());
-                    return oi;
-                }).collect(Collectors.toList()));
+        order.setGuestId(request.getGuestId());
+        order.setSessionId(request.getSessionId());
+        order.setGuestEmail(guest.getEmail());
+        order.setTotalAmount(request.getTotal());
+        order.setStatus(OrderStatus.PAYMENT_PENDING);
+
+        // Mapear items si existen
+        if (request.getItems() != null && !request.getItems().isEmpty()) {
+            List<OrderItem> orderItems = request.getItems().stream()
+                .map(dto -> {
+                    OrderItem item = new OrderItem();
+                    item.setProductId(dto.getProductId());
+                    item.setQuantity(dto.getQuantity());
+                    item.setPrice(dto.getPrice());
+                    return item;
+                })
+                .collect(Collectors.toList());
+            order.setItems(orderItems);
+        } else {
+            order.setItems(new ArrayList<>());
+        }
 
         order = repository.save(order);
+
+        // NUEVO: Publicar OrderCreatedEvent preliminar (para reserve stock o notificación "orden recibida")
+        OrderCreatedEvent event = OrderCreatedEvent.builder()
+            .orderId(order.getId())
+            .guestId(order.getGuestId())
+            .sessionId(order.getSessionId())
+            .guestEmail(order.getGuestEmail())
+            .subtotal(request.getTotal())
+            .discount(BigDecimal.ZERO)
+            .tax(BigDecimal.ZERO)
+            .shippingCost(request.getShippingCost() != null ? request.getShippingCost() : BigDecimal.ZERO)
+            .total(order.getTotalAmount())
+            .items(
+                order.getItems() != null ?
+                    order.getItems().stream()
+                        .map(item -> OrderCreatedEvent.OrderItemEvent.builder()
+                            .productId(item.getProductId())
+                            .quantity(item.getQuantity())
+                            .unitPriceSnapshot(BigDecimal.valueOf(item.getPrice() != null ? item.getPrice() : 0.0))
+                            .build()
+                        )
+                        .collect(Collectors.toList())
+                    : List.of()
+            )
+            .createdAt(order.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant())
+            .build();
+
+        rabbitTemplate.convertAndSend(
+            RabbitMQConfig.EXCHANGE,
+            "order.created.pending",
+            event
+        );
 
         OrderResponseDTO response = new OrderResponseDTO();
         response.setOrderId(order.getId());
         response.setGuestId(order.getGuestId());
-        response.setItems(cartDTO.getItems());
         response.setTotalAmount(order.getTotalAmount());
         response.setStatus(order.getStatus());
         response.setCreatedAt(order.getCreatedAt());
+        if (order.getItems() != null) {
+            response.setItems(order.getItems().stream()
+                .map(oi -> {
+                    CartItemDTO dto = new CartItemDTO();
+                    dto.setProductId(oi.getProductId());
+                    dto.setQuantity(oi.getQuantity());
+                    dto.setPrice(oi.getPrice());
+                    return dto;
+                })
+                .collect(Collectors.toList()));
+        }
 
         return response;
     }

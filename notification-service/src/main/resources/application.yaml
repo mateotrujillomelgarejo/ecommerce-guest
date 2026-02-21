@@ -11,8 +11,8 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 587
-    username: ${NOTIFICATION_EMAIL_USER}
-    password: ${NOTIFICATION_EMAIL_PASSWORD}
+    username: knightmight10@gmail.com
+    password: hsaecofbnypfoxup
     properties:
       mail:
         smtp:
@@ -37,7 +37,7 @@ spring:
 
   data:
     redis:
-      host: redis
+      host: localhost
       port: 6379
 
   thymeleaf:

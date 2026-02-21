@@ -12,8 +12,8 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class PaymentSucceededEvent {
-    private String orderId;           // Clave principal para que Order Service lo procese
-    private String paymentId;         // Idempotency key
+    private String orderId;
+    private String paymentId;
     private Double amount;
     private String gateway;
     private LocalDateTime confirmedAt;

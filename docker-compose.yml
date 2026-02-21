@@ -1,6 +1,22 @@
 version: '3.9'
-
 services:
+  config-server:
+    build: ./config-server
+    container_name: config-server
+    ports:
+      - "8888:8888"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+
+  discovery-service:
+    build: ./discovery-service
+    container_name: discovery-service
+    ports:
+      - "8761:8761"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      - config-server
 
   gateway:
     build: ./api-gateway
@@ -11,15 +27,7 @@ services:
       - SERVER_PORT=8080
       - SPRING_PROFILES_ACTIVE=docker
     depends_on:
-      - product
-      - cart
-      - order
-      - customer
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - discovery-service
 
   product:
     build: ./product-service
@@ -32,11 +40,6 @@ services:
     depends_on:
       postgres-product:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   postgres-product:
     image: postgres:16
@@ -48,8 +51,6 @@ services:
       POSTGRES_PASSWORD: ecommerce_pass
     ports:
       - "5433:5432"
-    volumes:
-      - postgres-product-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ecommerce_user -d ecommerce_product"]
       interval: 5s
@@ -69,11 +70,6 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_started
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   postgres-inventory:
     image: postgres:16
@@ -85,8 +81,6 @@ services:
       POSTGRES_PASSWORD: InventoryPass123!
     ports:
       - "5436:5432"
-    volumes:
-      - postgres-inventory-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U inventory_user -d inventory_db"]
       interval: 5s
@@ -106,13 +100,6 @@ services:
     depends_on:
       sqlserver-cart:
         condition: service_healthy
-      inventory:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   sqlserver-cart:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -124,8 +111,6 @@ services:
       MSSQL_PID: Express
     ports:
       - "1434:1433"
-    volumes:
-      - sqlserver-cart-data:/var/opt/mssql
     healthcheck:
       test: /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong@Passw0rd -Q "SELECT 1" -b
       interval: 10s
@@ -143,13 +128,6 @@ services:
     depends_on:
       sqlserver-order:
         condition: service_healthy
-      rabbitmq:
-        condition: service_started
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   sqlserver-order:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -161,8 +139,6 @@ services:
       MSSQL_PID: Express
     ports:
       - "1435:1433"
-    volumes:
-      - sqlserver-order-data:/var/opt/mssql
     healthcheck:
       test: /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong@Passw0rd -Q "SELECT 1" -b
       interval: 10s
@@ -180,11 +156,6 @@ services:
     depends_on:
       postgres-customer:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8085/actuator/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   postgres-customer:
     image: postgres:16
@@ -196,13 +167,43 @@ services:
       POSTGRES_PASSWORD: CustomerPass123!
     ports:
       - "5437:5432"
-    volumes:
-      - postgres-customer-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U customer_user -d customer_db"]
       interval: 5s
       timeout: 5s
       retries: 5
+
+  pricing:
+    build: ./pricing-service
+    container_name: pricing-service
+    ports:
+      - "8090:8090"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      
+  payment:
+    build: ./payment-service
+    container_name: payment-service
+    ports:
+      - "8092:8092"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      
+  shipping:
+    build: ./shipping-service
+    container_name: shipping-service
+    ports:
+      - "8091:8091"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      
+  notification:
+    build: ./notification-service
+    container_name: notification-service
+    ports:
+      - "8089:8089"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -214,18 +215,18 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis-cache
+    restart: always
+    ports:
+      - "6379:6379"
     volumes:
-      - rabbitmq-data:/var/lib/rabbitmq
+      - redis-data:/data
+    command: redis-server --appendonly yes
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-
-volumes:
-  postgres-product-data:
-  postgres-inventory-data:
-  postgres-customer-data:
-  sqlserver-cart-data:
-  sqlserver-order-data:
-  rabbitmq-data:

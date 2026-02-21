@@ -1,18 +1,11 @@
-// ────────────────────────────────────────────────
-// pe.takiq.ecommerce.payment_service.service.PaymentService.java
-// ────────────────────────────────────────────────
 package pe.takiq.ecommerce.payment_service.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 
-import pe.takiq.ecommerce.payment_service.dto.DirectPaymentRequest;
 import pe.takiq.ecommerce.payment_service.dto.PaymentRequest;
 import pe.takiq.ecommerce.payment_service.dto.PaymentResponse;
 import pe.takiq.ecommerce.payment_service.events.PaymentSucceededEvent;
@@ -34,56 +27,18 @@ public class PaymentService {
     private static final String ORDER_EVENTS_EXCHANGE = "ecommerce.events";
     private static final String ROUTING_KEY_PAYMENT_SUCCEEDED = "payment.succeeded";
 
-@Transactional
-    public PaymentResponse simulateDirectSuccess(DirectPaymentRequest request) {
-        // Validaciones mínimas
-        if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("amount es obligatorio y > 0");
-        }
-        if (request.getGuestId() == null || request.getGuestId().isBlank()) {
-            throw new IllegalArgumentException("guestId es obligatorio");
-        }
-
-        String paymentId = UUID.randomUUID().toString();
-
-        PaymentTransaction tx = new PaymentTransaction();
-        tx.setPaymentId(paymentId);
-        tx.setAmount(request.getAmount());
-        tx.setStatus("SUCCESS");
-        tx.setGateway("SIMULATED_DIRECT");
-        tx.setGuestEmail(request.getGuestEmail() != null ? request.getGuestEmail() : "unknown");
-
-        transactionRepository.save(tx);
-
-        // Publicar evento inmediatamente
-        PaymentSucceededEvent event = PaymentSucceededEvent.builder()
-                .orderId(null)
-                .paymentId(paymentId)
-                .amount(request.getAmount().doubleValue())
-                .gateway(tx.getGateway())
-                .confirmedAt(LocalDateTime.now())
-                .guestEmail(request.getGuestEmail())
-                .build();
-
-        rabbitTemplate.convertAndSend(ORDER_EVENTS_EXCHANGE, ROUTING_KEY_PAYMENT_SUCCEEDED, event);
-
-        log.info("Pago simulado directo → paymentId={}, amount={}, guestId={}", 
-                 paymentId, request.getAmount(), request.getGuestId());
-
-        PaymentResponse response = new PaymentResponse();
-        response.setPaymentId(paymentId);
-        response.setStatus("SUCCEEDED");
-        response.setMessage("Pago simulado exitoso de forma directa");
-        response.setRedirectUrl(null);
-
-        return response;
-    }
-
+    /**
+     * Flujo correcto: Inicia un pago asociado a una orden ya creada.
+     * Devuelve paymentId para que el frontend haga confirmación o polling.
+     */
     @Transactional
     public PaymentResponse initiatePayment(PaymentRequest request) {
-        // Validación básica
-        if (request.getOrderId() == null || request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("orderId y amount son obligatorios y amount > 0");
+        // Validación estricta
+        if (request.getOrderId() == null || request.getOrderId().trim().isEmpty()) {
+            throw new IllegalArgumentException("orderId es obligatorio (la orden debe existir antes de iniciar pago)");
+        }
+        if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("amount es obligatorio y debe ser > 0");
         }
 
         String paymentId = UUID.randomUUID().toString();
@@ -93,7 +48,11 @@ public class PaymentService {
         tx.setOrderId(request.getOrderId());
         tx.setAmount(request.getAmount());
         tx.setStatus("PENDING");
-        tx.setGateway("SIMULATED"); // → cambiar a "STRIPE", etc. cuando integres real
+        tx.setGateway("SIMULATED"); // Cambiar a "STRIPE", "PAYPAL", etc. en producción
+        // Opcional: guarda guestEmail si viene en el request
+        if (request.getGuestEmail() != null && !request.getGuestEmail().isBlank()) {
+            tx.setGuestEmail(request.getGuestEmail());
+        }
 
         transactionRepository.save(tx);
 
@@ -103,18 +62,24 @@ public class PaymentService {
         PaymentResponse response = new PaymentResponse();
         response.setPaymentId(paymentId);
         response.setStatus("PENDING");
-        response.setRedirectUrl(request.getReturnUrl() + "?paymentId=" + paymentId + "&status=pending");
+        response.setRedirectUrl(request.getReturnUrl() != null 
+            ? request.getReturnUrl() + "?paymentId=" + paymentId + "&status=pending"
+            : null);
         response.setMessage("Pago iniciado. Completa el proceso en la pasarela.");
 
         return response;
     }
 
+    /**
+     * Confirma el pago (simulado o real callback del gateway).
+     * Actualiza estado y publica evento con orderId garantizado.
+     */
     @Transactional
     public void confirmPayment(String paymentId) {
         PaymentTransaction tx = transactionRepository.findByPaymentId(paymentId)
                 .orElseThrow(() -> new RuntimeException("Transacción no encontrada: " + paymentId));
 
-        // Idempotencia fuerte
+        // Idempotencia
         if ("SUCCESS".equals(tx.getStatus())) {
             log.info("Pago {} ya confirmado previamente (idempotencia)", paymentId);
             return;
@@ -124,27 +89,35 @@ public class PaymentService {
             throw new IllegalStateException("No se puede confirmar transacción en estado: " + tx.getStatus());
         }
 
-        // Simulación de aprobación (en real: callback del gateway)
+        // Simulación de aprobación
         tx.setStatus("SUCCESS");
         tx.setUpdatedAt(LocalDateTime.now());
         transactionRepository.save(tx);
 
-        // Publicar evento → Order Service lo escuchará y pasará a PAID + publicará order.created
+        // Publicar evento con orderId (siempre presente)
+        if (tx.getOrderId() == null) {
+            log.error("¡Transacción sin orderId! paymentId={}", paymentId);
+            throw new IllegalStateException("No se puede publicar evento sin orderId asociado");
+        }
+
         PaymentSucceededEvent event = PaymentSucceededEvent.builder()
-                .orderId(tx.getOrderId())
+                .orderId(tx.getOrderId())                     // ← Clave: siempre desde BD
                 .paymentId(tx.getPaymentId())
                 .amount(tx.getAmount().doubleValue())
                 .gateway(tx.getGateway())
                 .confirmedAt(LocalDateTime.now())
+                .guestEmail(tx.getGuestEmail())               // Opcional: si lo guardaste
                 .build();
 
         rabbitTemplate.convertAndSend(ORDER_EVENTS_EXCHANGE, ROUTING_KEY_PAYMENT_SUCCEEDED, event);
 
-        log.info("Pago confirmado → evento payment.succeeded publicado para orderId={}, paymentId={}", 
-                 tx.getOrderId(), paymentId);
+        log.info("Pago confirmado → evento publicado → orderId={}, paymentId={}, amount={}", 
+                 tx.getOrderId(), paymentId, tx.getAmount());
     }
 
-    // Para testing: simular fallo
+    /**
+     * Método para testing: simular fallo manual
+     */
     public void failPayment(String paymentId) {
         PaymentTransaction tx = transactionRepository.findByPaymentId(paymentId)
                 .orElseThrow(() -> new RuntimeException("Transacción no encontrada"));
@@ -156,7 +129,25 @@ public class PaymentService {
         tx.setStatus("FAILED");
         transactionRepository.save(tx);
 
-        log.warn("Pago fallido manualmente → paymentId={}", paymentId);
-        // Opcional: publicar payment.failed si lo necesitas en el futuro
+        log.warn("Pago fallido manualmente → paymentId={}, orderId={}", 
+                 paymentId, tx.getOrderId());
+    }
+
+    /**
+     * Procesa un reembolso automáticamente cuando otro microservicio (ej. Inventario)
+     * falla y no puede cumplir con la orden que ya fue pagada.
+     */
+    @Transactional
+    public void processRefundForFailedOrder(String orderId) {
+        transactionRepository.findByOrderIdAndStatus(orderId, "SUCCESS")
+                .ifPresent(tx -> {
+                    tx.setStatus("REFUNDED");
+                    tx.setUpdatedAt(LocalDateTime.now());
+                    transactionRepository.save(tx);
+                    
+                    log.warn("Reembolso procesado exitosamente para la orden: {} por falta de inventario", orderId);
+                    // NOTA: Aquí en producción llamarías a la API real de Stripe/Niubiz/MercadoPago
+                    // para ejecutar el "Refund" en la tarjeta del cliente.
+                });
     }
 }

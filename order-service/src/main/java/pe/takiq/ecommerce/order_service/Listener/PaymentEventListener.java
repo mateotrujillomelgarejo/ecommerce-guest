@@ -12,6 +12,8 @@ import pe.takiq.ecommerce.order_service.model.Order;
 import pe.takiq.ecommerce.order_service.model.OrderStatus;
 import pe.takiq.ecommerce.order_service.repository.OrderRepository;
 
+import java.math.BigDecimal;
+
 @Component
 @RequiredArgsConstructor
 public class PaymentEventListener {
@@ -25,18 +27,26 @@ public class PaymentEventListener {
                 .orElseThrow(() -> new RuntimeException("Orden no encontrada: " + event.getOrderId()));
 
         if (order.getStatus() != OrderStatus.PAYMENT_PENDING) {
-            return; // Idempotencia: ya procesado
+            return;
         }
 
         order.setStatus(OrderStatus.PAID);
         order.setPaymentId(event.getPaymentId());
         orderRepository.save(order);
 
-        // SOLO AQUÍ: Publicar order.created tras pago
         OrderCreatedEvent createdEvent = OrderCreatedEvent.builder()
                 .orderId(order.getId())
                 .guestId(order.getGuestId())
+                .sessionId(order.getSessionId())
+                .guestEmail(order.getGuestEmail())
                 .total(order.getTotalAmount())
+                .items(order.getItems().stream().map(item -> 
+                    OrderCreatedEvent.OrderItemEvent.builder()
+                        .productId(item.getProductId())
+                        .quantity(item.getQuantity())
+                        .unitPriceSnapshot(BigDecimal.valueOf(item.getPrice() != null ? item.getPrice() : 0.0))
+                        .build()
+                ).toList())
                 .build();
 
         rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE, "order.created", createdEvent);

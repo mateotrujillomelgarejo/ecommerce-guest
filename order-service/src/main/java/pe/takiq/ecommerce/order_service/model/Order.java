@@ -14,19 +14,17 @@ import java.util.UUID;
 public class Order {
     @Id
     private String id = UUID.randomUUID().toString();
-
-    private String guestId; // Asociado a guest
+    private String guestId;
+    
+    private String sessionId;  // NUEVO
+    private String guestEmail; // NUEVO
     
     @ElementCollection
     private List<OrderItem> items;
-
     private BigDecimal totalAmount;
-
-    private String paymentId; // Referencia post-pago
-
+    private String paymentId;
     @Enumerated(EnumType.STRING)
     private OrderStatus status = OrderStatus.PAYMENT_PENDING;
-
     private LocalDateTime createdAt = LocalDateTime.now();
 
     @Embeddable

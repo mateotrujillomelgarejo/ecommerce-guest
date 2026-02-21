@@ -3,6 +3,7 @@ package pe.takiq.ecommerce.notification_service.config;
 import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.amqp.support.converter.Jackson2JavaTypeMapper;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,7 +18,6 @@ public class RabbitMQConfig {
 
     public static final String ROUTING_KEY_CREATED   = "order.created";
     public static final String ROUTING_KEY_SHIPPED   = "order.shipped";
-    // public static final String ROUTING_KEY_DELIVERED = "order.delivered";
 
     @Bean
     public TopicExchange orderEventsExchange() {
@@ -33,10 +33,6 @@ public class RabbitMQConfig {
     public Queue orderShippedQueue() {
         return QueueBuilder.durable(ORDER_SHIPPED_QUEUE).build();
     }
-
-    // Opcional:
-    // @Bean
-    // public Queue orderDeliveredQueue() { ... }
 
     @Bean
     public Binding bindOrderCreated() {
@@ -54,7 +50,9 @@ public class RabbitMQConfig {
 
     @Bean
     public Jackson2JsonMessageConverter jsonMessageConverter() {
-        return new Jackson2JsonMessageConverter();
+        Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter();
+        converter.setTypePrecedence(Jackson2JavaTypeMapper.TypePrecedence.INFERRED);
+        return converter;
     }
 
     @Bean

@@ -12,7 +12,7 @@ spring:
     gateway:
       discovery:
         locator:
-          enabled: false  # Mantenemos desactivado para rutas manuales
+          enabled: false
       routes:
         - id: product-service
           uri: lb://PRODUCT-SERVICE
@@ -54,7 +54,6 @@ spring:
           predicates:
             - Path=/payments/**
 
-# Eureka client - FORZAR FULL REGISTRY CADA VEZ (mantengo igual)
 eureka:
   client:
     service-url:

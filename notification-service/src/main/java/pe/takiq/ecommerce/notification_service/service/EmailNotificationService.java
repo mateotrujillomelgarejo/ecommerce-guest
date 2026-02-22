@@ -6,6 +6,7 @@ import pe.takiq.ecommerce.notification_service.events.OrderCreatedEvent;
 import pe.takiq.ecommerce.notification_service.events.OrderShippedEvent;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.retry.support.RetryTemplate;
@@ -15,6 +16,7 @@ import org.thymeleaf.context.Context;
 
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
+import java.time.Duration;
 
 @Slf4j
 @Service
@@ -24,13 +26,20 @@ public class EmailNotificationService {
     private final JavaMailSender mailSender;
     private final TemplateEngine templateEngine;
     private final RetryTemplate retryTemplate;
+    
+    private final StringRedisTemplate redisTemplate;
 
     @Value("${notification.from}")
     private String fromEmail;
 
     public void sendOrderCreatedNotification(OrderCreatedEvent event) {
-        if (event.getGuestEmail() == null || event.getGuestEmail().isBlank()) {
-            log.error("ERROR: El email del cliente vino nulo para la orden {}. Abortando envío.", event.getOrderId());
+        if (event.getGuestEmail() == null || event.getGuestEmail().isBlank()) return;
+
+        String lockKey = "lock:email:created:" + event.getOrderId();
+        Boolean isFirstTime = redisTemplate.opsForValue().setIfAbsent(lockKey, "SENT", Duration.ofDays(7));
+        
+        if (Boolean.FALSE.equals(isFirstTime)) {
+            log.info("El correo de Confirmación de la orden {} ya se envió. Ignorando.", event.getOrderId());
             return;
         }
         
@@ -40,13 +49,17 @@ public class EmailNotificationService {
     }
 
     public void sendShippingConfirmation(OrderShippedEvent event) {
-        if (event.getGuestEmail() == null || event.getGuestEmail().isBlank()) {
-            log.error("ERROR: El email del cliente vino nulo para el envío {}. Abortando envío.", event.getOrderId());
+        if (event.getGuestEmail() == null || event.getGuestEmail().isBlank()) return;
+
+        String lockKey = "lock:email:shipped:" + event.getOrderId();
+        Boolean isFirstTime = redisTemplate.opsForValue().setIfAbsent(lockKey, "SENT", Duration.ofDays(7));
+        
+        if (Boolean.FALSE.equals(isFirstTime)) {
+            log.info("El correo de Envío de la orden {} ya se envió. Ignorando.", event.getOrderId());
             return;
         }
 
         String subject = "¡Tu pedido #" + event.getOrderId() + " ya está en camino!";
-        
         Context context = new Context();
         context.setVariable("orderId", event.getOrderId());
         context.setVariable("trackingNumber", event.getTrackingNumber());
@@ -54,7 +67,6 @@ public class EmailNotificationService {
         context.setVariable("carrier", event.getCarrier());
 
         String htmlContent = templateEngine.process("shipping-confirmation-email", context);
-        
         sendEmail(event.getGuestEmail(), subject, htmlContent);
     }
 
@@ -65,7 +77,6 @@ public class EmailNotificationService {
         context.setVariable("total", formattedTotal);
         context.setVariable("items", event.getItems());
         context.setVariable("createdAt", event.getCreatedAt());
-        // Agrega más si quieres: guestName, dirección, etc.
 
         return templateEngine.process("order-created-email", context);
     }

@@ -40,6 +40,21 @@ management:
       exposure:
         include: health,info,metrics
 
+resilience4j:
+  circuitbreaker:
+    instances:
+      customerClient:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10000ms
+        permittedNumberOfCallsInHalfOpenState: 3
+  retry:
+    instances:
+      customerClient:
+        maxAttempts: 3
+        waitDuration: 1000ms
+
 eureka:
   client:
     register-with-eureka: true

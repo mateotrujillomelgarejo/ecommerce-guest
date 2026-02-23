@@ -121,7 +121,11 @@
             <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
-
+        <!-- Distributed Tracing para ver el flujo en los logs -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-brave</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

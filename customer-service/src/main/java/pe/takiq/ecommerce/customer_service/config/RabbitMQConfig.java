@@ -1,6 +1,6 @@
 package pe.takiq.ecommerce.customer_service.config;
 
-import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JavaTypeMapper;
@@ -13,10 +13,23 @@ public class RabbitMQConfig {
 
     public static final String GUEST_EVENTS_EXCHANGE = "guest.events.exchange";
     public static final String GUEST_CREATED_QUEUE = "guest.created.queue";
+    public static final String ROUTING_KEY_CREATED = "guest.created";
+
+    @Bean
+    public TopicExchange guestExchange() {
+        return new TopicExchange(GUEST_EVENTS_EXCHANGE, true, false);
+    }
 
     @Bean
     public Queue guestCreatedQueue() {
         return new Queue(GUEST_CREATED_QUEUE, true);
+    }
+
+    @Bean
+    public Binding guestCreatedBinding() {
+        return BindingBuilder.bind(guestCreatedQueue())
+                .to(guestExchange())
+                .with(ROUTING_KEY_CREATED);
     }
 
     @Bean

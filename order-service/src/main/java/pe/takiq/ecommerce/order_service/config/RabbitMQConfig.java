@@ -10,6 +10,11 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+
 @Configuration
 public class RabbitMQConfig {
 
@@ -17,12 +22,10 @@ public class RabbitMQConfig {
     public static final String QUEUE_PAYMENT_SUCCEEDED = "order.payment.succeeded.queue";
     public static final String QUEUE_INVENTORY_FAILED = "order.inventory.failed.queue";
     public static final String QUEUE_ORDER_SHIPPED = "order.shipped.queue";
-    public static final String QUEUE_ORDER_DELIVERED = "order.delivered.queue";
 
     public static final String ROUTING_PAYMENT_SUCCEEDED = "payment.succeeded";
     public static final String ROUTING_INVENTORY_FAILED = "inventory.failed";
     public static final String ROUTING_ORDER_SHIPPED = "order.shipped";
-    public static final String ROUTING_ORDER_DELIVERED = "order.delivered";
 
     @Bean
     public TopicExchange exchange() {
@@ -42,11 +45,6 @@ public class RabbitMQConfig {
     @Bean
     public Queue orderShippedQueue() {
         return new Queue(QUEUE_ORDER_SHIPPED, true);
-    }
-
-    @Bean
-    public Queue orderDeliveredQueue() {
-        return new Queue(QUEUE_ORDER_DELIVERED, true);
     }
 
 @Bean
@@ -82,20 +80,15 @@ public Binding orderShippedBinding(
             .with(ROUTING_ORDER_SHIPPED);
 }
 
-@Bean
-public Binding orderDeliveredBinding(
-        @Qualifier("orderDeliveredQueue") Queue orderDeliveredQueue,
-        TopicExchange exchange
-) {
-    return BindingBuilder
-            .bind(orderDeliveredQueue)
-            .to(exchange)
-            .with(ROUTING_ORDER_DELIVERED);
-}
-
     @Bean
     public Jackson2JsonMessageConverter jsonMessageConverter() {
-        Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter();
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
+        objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        
+        objectMapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES); 
+
+        Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter(objectMapper);
         converter.setTypePrecedence(Jackson2JavaTypeMapper.TypePrecedence.INFERRED);
         return converter;
     }

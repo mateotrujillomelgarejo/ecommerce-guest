@@ -9,5 +9,4 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
 
     List<Promotion> findByProductIdAndActiveTrue(String productId);
 
-    List<Promotion> findByCategoryAndActiveTrue(String category);
 }

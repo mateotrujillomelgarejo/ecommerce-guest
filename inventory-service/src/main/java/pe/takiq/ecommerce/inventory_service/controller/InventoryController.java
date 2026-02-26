@@ -1,7 +1,5 @@
 package pe.takiq.ecommerce.inventory_service.controller;
 
-import java.util.Map;
-
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -13,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import lombok.RequiredArgsConstructor;
+import pe.takiq.ecommerce.inventory_service.dto.ReserveStockRequest;
 import pe.takiq.ecommerce.inventory_service.model.Inventory;
 import pe.takiq.ecommerce.inventory_service.repository.InventoryRepository;
 import pe.takiq.ecommerce.inventory_service.service.InventoryService;
@@ -29,6 +28,12 @@ public class InventoryController {
     public Inventory guardar(@RequestBody Inventory entity) {
         return repo.save(entity);
     }
+
+    @PostMapping("/reserve")
+    public ResponseEntity<Void> reserveStock(@RequestBody ReserveStockRequest request) {
+        service.reserveStock(request);
+        return ResponseEntity.ok().build();
+    }
     
 
     @GetMapping("/{productId}/check")
@@ -36,11 +41,6 @@ public class InventoryController {
             @PathVariable("productId") String productId,
             @RequestParam("quantity") int quantity) {
         return ResponseEntity.ok(service.checkAvailability(productId, quantity));
-    }
-
-    @PostMapping("/check-batch")
-    public ResponseEntity<Boolean> checkBatch(@RequestBody Map<String, Integer> items) {
-        return ResponseEntity.ok(service.checkMultipleAvailability(items));
     }
 
     @PutMapping("/{productId}")

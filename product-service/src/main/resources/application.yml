@@ -18,6 +18,8 @@ spring:
     redis:
       time-to-live: 300000
 
+
+
   cloud:
     openfeign:
       client:
@@ -25,6 +27,13 @@ spring:
           default:
             connectTimeout: 5000
             readTimeout: 10000
+
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
 
 eureka:
   client:

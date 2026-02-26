@@ -6,7 +6,7 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 
 import pe.takiq.ecommerce.notification_service.config.RabbitMQConfig;
-import pe.takiq.ecommerce.notification_service.events.OrderCreatedEvent;
+import pe.takiq.ecommerce.notification_service.events.OrderPaidEvent;
 import pe.takiq.ecommerce.notification_service.events.OrderShippedEvent;
 import pe.takiq.ecommerce.notification_service.service.EmailNotificationService;
 
@@ -17,10 +17,10 @@ public class OrderEventListener {
 
     private final EmailNotificationService emailService;
 
-    @RabbitListener(queues = RabbitMQConfig.ORDER_CREATED_QUEUE)
-    public void onOrderCreated(OrderCreatedEvent event) {
+    @RabbitListener(queues = RabbitMQConfig.ORDER_PAID_QUEUE)
+    public void onOrderPaid(OrderPaidEvent event) {
         log.info("Enviando email de confirmación de pedido recibido y pagado → orderId: {}", event.getOrderId());
-        emailService.sendOrderCreatedNotification(event);
+        emailService.sendOrderPaidNotification(event);
     }
 
     @RabbitListener(queues = RabbitMQConfig.ORDER_SHIPPED_QUEUE)
@@ -29,12 +29,4 @@ public class OrderEventListener {
                  event.getOrderId(), event.getTrackingNumber());
         emailService.sendShippingConfirmation(event);
     }
-
-    // Opcional – si Shipping publica order.delivered en el futuro
-    /*
-    @RabbitListener(queues = "notification.order-delivered.queue")
-    public void onOrderDelivered(OrderDeliveredEvent event) {
-        emailService.sendOrderDeliveredNotification(event);
-    }
-    */
 }

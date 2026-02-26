@@ -9,12 +9,19 @@ import org.springframework.stereotype.Service;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
+
 import pe.takiq.ecommerce.shipping_service.client.CustomerClient;
 import pe.takiq.ecommerce.shipping_service.config.RabbitMQConfig;
+import pe.takiq.ecommerce.shipping_service.dto.AddressRequestDTO;
 import pe.takiq.ecommerce.shipping_service.dto.GuestResponseDTO;
 import pe.takiq.ecommerce.shipping_service.dto.ShippingCalculationRequest;
 import pe.takiq.ecommerce.shipping_service.dto.ShippingCalculationResponse;
-import pe.takiq.ecommerce.shipping_service.events.OrderCreatedEvent;
+import pe.takiq.ecommerce.shipping_service.events.OrderPaidEvent;
 import pe.takiq.ecommerce.shipping_service.events.OrderShippedEvent;
 import pe.takiq.ecommerce.shipping_service.model.Shipment;
 import pe.takiq.ecommerce.shipping_service.repository.ShipmentRepository;
@@ -28,22 +35,45 @@ public class ShippingService {
     private final RabbitTemplate rabbitTemplate;
     private final CustomerClient customerClient;
 
+    @Autowired
+    @Lazy
+    private ShippingService self;
+
     public boolean existsShipment(String orderId) {
         return repository.findByOrderId(orderId).isPresent();
     }
 
-    // ────────────────────────────────────────────────
-    // ASYNC – post pago
-    // ────────────────────────────────────────────────
+    @CircuitBreaker(name = "customerClient", fallbackMethod = "guestFallback")
+    public GuestResponseDTO getGuestSafely(String sessionId) {
+        return customerClient.getGuestBySessionId(sessionId);
+    }
+
+    public GuestResponseDTO guestFallback(String sessionId, Throwable t) {
+        log.warn("Customer-Service inalcanzable para {}. Usando fallback. Causa: {}", sessionId, t.getMessage());
+        GuestResponseDTO fallback = new GuestResponseDTO();
+        fallback.setSessionId(sessionId);
+        fallback.setGuestId("FALLBACK-GUEST");
+        fallback.setEmail("soporte@tutienda.pe");
+
+        AddressRequestDTO address = new AddressRequestDTO();
+        address.setStreet("Dirección pendiente de confirmación");
+        address.setCity("Lima");
+        address.setPostalCode("LIMA01");
+        address.setCountry("Perú");
+        fallback.setAddress(address);
+        return fallback;
+    }
+
+    public void createAndShip(OrderPaidEvent event) {
+        GuestResponseDTO guest = self.getGuestSafely(event.getSessionId());
+
+        BigDecimal shippingCost = calculateCost(event.getTotal());
+
+        self.saveAndPublish(event, guest, shippingCost);
+    }
+
     @Transactional
-    public void createAndShip(OrderCreatedEvent event) {
-
-        GuestResponseDTO guest = customerClient.getGuestBySessionId(event.getSessionId());
-
-        BigDecimal shippingCost = calculateCost(
-                event.getTotal()
-        );
-
+    public void saveAndPublish(OrderPaidEvent event, GuestResponseDTO guest, BigDecimal shippingCost) {
         Shipment shipment = Shipment.builder()
                 .orderId(event.getOrderId())
                 .postalCode(getPostal(guest))
@@ -57,16 +87,13 @@ public class ShippingService {
                 .build();
 
         shipment = repository.save(shipment);
-
         publishShippedEvent(shipment, guest.getEmail());
 
         log.info("Shipment creado y SHIPPED → orderId={}, tracking={}",
-                shipment.getOrderId(),
-                shipment.getTrackingNumber());
+                shipment.getOrderId(), shipment.getTrackingNumber());
     }
 
     private void publishShippedEvent(Shipment s, String email) {
-
         OrderShippedEvent event = OrderShippedEvent.builder()
                 .orderId(s.getOrderId())
                 .trackingNumber(s.getTrackingNumber())
@@ -77,24 +104,13 @@ public class ShippingService {
                 .message("Tu pedido ya está en camino")
                 .build();
 
-        rabbitTemplate.convertAndSend(
-                RabbitMQConfig.ORDER_EVENTS_EXCHANGE,
-                RabbitMQConfig.ROUTING_KEY_SHIPPED,
-                event
-        );
+        rabbitTemplate.convertAndSend(RabbitMQConfig.ORDER_EVENTS_EXCHANGE, RabbitMQConfig.ROUTING_KEY_SHIPPED, event);
     }
 
-    // ────────────────────────────────────────────────
-    // Quote síncrono
-    // ────────────────────────────────────────────────
     public ShippingCalculationResponse calculateShipping(ShippingCalculationRequest req) {
         BigDecimal total = req.getOrderTotal() != null ? req.getOrderTotal() : BigDecimal.ZERO;
-
         BigDecimal cost = calculateCost(total);
-        String msg = cost.equals(BigDecimal.ZERO)
-                ? "¡Envío gratis por superar S/300!"
-                : "Envío estándar";
-
+        String msg = cost.equals(BigDecimal.ZERO) ? "¡Envío gratis por superar S/300!" : "Envío estándar";
         return new ShippingCalculationResponse(cost, "3-5 días hábiles", msg);
     }
 
@@ -104,17 +120,8 @@ public class ShippingService {
         return new BigDecimal("15.00");
     }
 
-    // Helpers guest
-    private String getPostal(GuestResponseDTO g) {
-        return g.getAddress() != null ? g.getAddress().getPostalCode() : "LIMA01";
-    }
-    private String getStreet(GuestResponseDTO g) {
-        return g.getAddress() != null ? g.getAddress().getStreet() : "Dirección no registrada";
-    }
-    private String getCity(GuestResponseDTO g) {
-        return g.getAddress() != null ? g.getAddress().getCity() : "Lima";
-    }
-    private String getCountry(GuestResponseDTO g) {
-        return g.getAddress() != null ? g.getAddress().getCountry() : "Perú";
-    }
+    private String getPostal(GuestResponseDTO g) { return g.getAddress() != null ? g.getAddress().getPostalCode() : "LIMA01"; }
+    private String getStreet(GuestResponseDTO g) { return g.getAddress() != null ? g.getAddress().getStreet() : "Dirección no registrada"; }
+    private String getCity(GuestResponseDTO g) { return g.getAddress() != null ? g.getAddress().getCity() : "Lima"; }
+    private String getCountry(GuestResponseDTO g) { return g.getAddress() != null ? g.getAddress().getCountry() : "Perú"; }
 }

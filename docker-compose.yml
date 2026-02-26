@@ -1,5 +1,9 @@
 version: '3.9'
+
 services:
+
+  # ================= CONFIG / DISCOVERY =================
+
   config-server:
     build: ./config-server
     container_name: config-server
@@ -15,6 +19,7 @@ services:
       - "8761:8761"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
     depends_on:
       - config-server
 
@@ -24,10 +29,42 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - SERVER_PORT=8080
       - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
     depends_on:
       - discovery-service
+
+  # ================= INFRAESTRUCTURA =================
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  redis-cache:
+    image: redis:7-alpine
+    container_name: redis-cache
+    restart: always
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+
+  # ================= PRODUCT (MongoDB) =================
+
+  mongo-product:
+    image: mongo:6.0
+    container_name: mongo-product
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: product_user
+      MONGO_INITDB_ROOT_PASSWORD: Product123
+      MONGO_INITDB_DATABASE: ecommerce_product
+    ports:
+      - "27017:27017"
 
   product:
     build: ./product-service
@@ -35,41 +72,16 @@ services:
     ports:
       - "8081:8081"
     environment:
-      - SERVER_PORT=8081
       - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATA_MONGODB_URI=mongodb://product_user:Product123@mongo-product:27017/ecommerce_product?authSource=admin
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_DATA_REDIS_HOST=redis-cache
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
     depends_on:
-      postgres-product:
-        condition: service_healthy
+      - mongo-product
 
-  postgres-product:
-    image: postgres:16
-    container_name: postgres-product
-    restart: always
-    environment:
-      POSTGRES_DB: ecommerce_product
-      POSTGRES_USER: ecommerce_user
-      POSTGRES_PASSWORD: ecommerce_pass
-    ports:
-      - "5433:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ecommerce_user -d ecommerce_product"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  inventory:
-    build: ./inventory-service
-    container_name: inventory-service
-    ports:
-      - "8084:8084"
-    environment:
-      - SERVER_PORT=8084
-      - SPRING_PROFILES_ACTIVE=docker
-    depends_on:
-      postgres-inventory:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_started
+  # ================= INVENTORY (Postgres) =================
 
   postgres-inventory:
     image: postgres:16
@@ -81,11 +93,26 @@ services:
       POSTGRES_PASSWORD: InventoryPass123!
     ports:
       - "5436:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U inventory_user -d inventory_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+
+  inventory:
+    build: ./inventory-service
+    container_name: inventory-service
+    ports:
+      - "8084:8084"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-inventory:5432/inventory_db
+      - SPRING_DATASOURCE_USERNAME=inventory_user
+      - SPRING_DATASOURCE_PASSWORD=InventoryPass123!
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_DATA_REDIS_HOST=redis-cache
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+    depends_on:
+      - postgres-inventory
+      - rabbitmq
+
+  # ================= CART (Redis only) =================
 
   cart:
     build: ./cart-service
@@ -93,29 +120,34 @@ services:
     ports:
       - "8082:8082"
     environment:
-      - SERVER_PORT=8082
       - SPRING_PROFILES_ACTIVE=docker
-      - PRODUCT_SERVICE_URL=http://product:8081
-      - INVENTORY_SERVICE_URL=http://inventory:8084
+      - SPRING_DATA_REDIS_HOST=redis-cache
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - PRODUCT_SERVICE_URL=http://product-service:8081
+      - INVENTORY_SERVICE_URL=http://inventory-service:8084
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
     depends_on:
-      sqlserver-cart:
-        condition: service_healthy
+      - redis-cache
 
-  sqlserver-cart:
+  # ================= ORDER (SQL Server) =================
+  
+  sqlserver-order:
     image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: sqlserver-cart
+    container_name: sqlserver-order
     restart: always
     environment:
-      ACCEPT_EULA: Y
-      SA_PASSWORD: YourStrong@Passw0rd
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "TuPasswordFuerte123!"
       MSSQL_PID: Express
     ports:
-      - "1434:1433"
+      - "1435:1433"
+    # Este healthcheck crea la base de datos "orderdb" si no existe.
     healthcheck:
-      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong@Passw0rd -Q "SELECT 1" -b
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'TuPasswordFuerte123!' -C -Q \"IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'orderdb') BEGIN CREATE DATABASE orderdb; END\" && /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'TuPasswordFuerte123!' -C -Q \"SELECT 1\""]
       interval: 10s
-      timeout: 5s
-      retries: 5
+      timeout: 10s
+      retries: 10
 
   order:
     build: ./order-service
@@ -123,39 +155,25 @@ services:
     ports:
       - "8083:8083"
     environment:
-      - SERVER_PORT=8083
       - SPRING_PROFILES_ACTIVE=docker
+      # Conexión directa a SQL Server sobreescribiendo la configuración local
+      - SPRING_DATASOURCE_URL=jdbc:sqlserver://sqlserver-order:1433;databaseName=orderdb;encrypt=true;trustServerCertificate=true
+      - SPRING_DATASOURCE_USERNAME=sa
+      - SPRING_DATASOURCE_PASSWORD=TuPasswordFuerte123!
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_DATA_REDIS_HOST=redis-cache
+      - CUSTOMER_SERVICE_URL=http://customer-service:8085
+      - INVENTORY_SERVICE_URL=http://inventory-service:8084
+      - PRICING_SERVICE_URL=http://pricing-service:8090
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
     depends_on:
       sqlserver-order:
         condition: service_healthy
+      rabbitmq:
+        condition: service_started
 
-  sqlserver-order:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: sqlserver-order
-    restart: always
-    environment:
-      ACCEPT_EULA: Y
-      SA_PASSWORD: YourStrong@Passw0rd
-      MSSQL_PID: Express
-    ports:
-      - "1435:1433"
-    healthcheck:
-      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P YourStrong@Passw0rd -Q "SELECT 1" -b
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  customer:
-    build: ./customer-service
-    container_name: customer-service
-    ports:
-      - "8085:8085"
-    environment:
-      - SERVER_PORT=8085
-      - SPRING_PROFILES_ACTIVE=docker
-    depends_on:
-      postgres-customer:
-        condition: service_healthy
+  # ================= CUSTOMER =================
 
   postgres-customer:
     image: postgres:16
@@ -167,11 +185,36 @@ services:
       POSTGRES_PASSWORD: CustomerPass123!
     ports:
       - "5437:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U customer_user -d customer_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+
+  customer:
+    build: ./customer-service
+    container_name: customer-service
+    ports:
+      - "8085:8085"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-customer:5432/customer_db
+      - SPRING_DATASOURCE_USERNAME=customer_user
+      - SPRING_DATASOURCE_PASSWORD=CustomerPass123!
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_DATA_REDIS_HOST=redis-cache
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+    depends_on:
+      - postgres-customer
+
+  # ================= PRICING =================
+
+  postgres-pricing:
+    image: postgres:16
+    container_name: postgres-pricing
+    restart: always
+    environment:
+      POSTGRES_DB: pricing_db
+      POSTGRES_USER: pricing_user
+      POSTGRES_PASSWORD: PricingPass123!
+    ports:
+      - "5438:5432"
 
   pricing:
     build: ./pricing-service
@@ -180,7 +223,27 @@ services:
       - "8090:8090"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
-      
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-pricing:5432/pricing_db
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_DATA_REDIS_HOST=redis-cache
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+    depends_on:
+      - postgres-pricing
+
+  # ================= PAYMENT =================
+
+  postgres-payment:
+    image: postgres:16
+    container_name: postgres-payment
+    restart: always
+    environment:
+      POSTGRES_DB: payment_db
+      POSTGRES_USER: payment_user
+      POSTGRES_PASSWORD: PaymentPass123!
+    ports:
+      - "5439:5432"
+
   payment:
     build: ./payment-service
     container_name: payment-service
@@ -188,7 +251,27 @@ services:
       - "8092:8092"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
-      
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-payment:5432/payment_db
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_DATA_REDIS_HOST=redis-cache
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+    depends_on:
+      - postgres-payment
+
+  # ================= SHIPPING =================
+
+  postgres-shipping:
+    image: postgres:16
+    container_name: postgres-shipping
+    restart: always
+    environment:
+      POSTGRES_DB: shipping_db
+      POSTGRES_USER: shipping_user
+      POSTGRES_PASSWORD: ShippingPass123!
+    ports:
+      - "5440:5432"
+
   shipping:
     build: ./shipping-service
     container_name: shipping-service
@@ -196,7 +279,17 @@ services:
       - "8091:8091"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
-      
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-shipping:5432/shipping_db
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_DATA_REDIS_HOST=redis-cache
+      - CUSTOMER_SERVICE_URL=http://customer-service:8085
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+    depends_on:
+      - postgres-shipping
+
+  # ================= NOTIFICATION =================
+
   notification:
     build: ./notification-service
     container_name: notification-service
@@ -204,29 +297,12 @@ services:
       - "8089:8089"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_RABBITMQ_HOST=rabbitmq
+      - SPRING_DATA_REDIS_HOST=redis-cache
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+    depends_on:
+      - rabbitmq
 
-  rabbitmq:
-    image: rabbitmq:3-management
-    container_name: rabbitmq
-    restart: always
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
-
-  redis:
-    image: redis:7-alpine
-    container_name: redis-cache
-    restart: always
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    command: redis-server --appendonly yes
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+volumes:
+  redis-data:

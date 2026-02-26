@@ -1,82 +1,111 @@
 package pe.takiq.ecommerce.inventory_service.service;
 
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
-
-import org.springframework.stereotype.Service;
-import jakarta.transaction.Transactional;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-import pe.takiq.ecommerce.inventory_service.event.OrderCreatedEvent;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import pe.takiq.ecommerce.inventory_service.dto.ReserveStockRequest;
+import pe.takiq.ecommerce.inventory_service.event.OrderPaidEvent;
 import pe.takiq.ecommerce.inventory_service.exception.InsufficientStockException;
-import pe.takiq.ecommerce.inventory_service.exception.ProductNotFoundException;
 import pe.takiq.ecommerce.inventory_service.model.Inventory;
-import pe.takiq.ecommerce.inventory_service.model.ProcessedEvent;
 import pe.takiq.ecommerce.inventory_service.repository.InventoryRepository;
-import pe.takiq.ecommerce.inventory_service.repository.ProcessedEventRepository;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class InventoryService {
 
     private final InventoryRepository repository;
-    private final ProcessedEventRepository processedEventRepository;
+    private final RedisTemplate<String, Object> redisTemplate;
+    
+    @Qualifier("releaseStockScript")
+    private final DefaultRedisScript<String> reserveStockScript;
 
-    @Transactional
+    @Qualifier("releaseStockScript")
+    private final DefaultRedisScript<String> releaseStockScript;
+
+    public InventoryService(
+            InventoryRepository repository,
+            RedisTemplate<String, Object> redisTemplate,
+            @Qualifier("reserveStockScript") DefaultRedisScript<String> reserveStockScript,
+            @Qualifier("releaseStockScript") DefaultRedisScript<String> releaseStockScript
+    ) {
+        this.repository = repository;
+        this.redisTemplate = redisTemplate;
+        this.reserveStockScript = reserveStockScript;
+        this.releaseStockScript = releaseStockScript;
+    }
+
+    private static final String STOCK_PREFIX = "stock:";
+
+    private void ensureStockInRedis(String productId) {
+        String key = STOCK_PREFIX + productId;
+        if (Boolean.FALSE.equals(redisTemplate.hasKey(key))) {
+            Inventory inv = repository.findByProductId(productId)
+                    .filter(Inventory::isActive)
+                    .orElseThrow(() -> new IllegalArgumentException("Producto no existe o está inactivo: " + productId));
+            redisTemplate.opsForValue().set(key, inv.getAvailableQuantity().toString());
+        }
+    }
+
     public boolean checkAvailability(String productId, int quantity) {
-        Inventory inv = getActiveInventory(productId);
-        return inv.getAvailableQuantity() >= quantity;
+        ensureStockInRedis(productId);
+        Object current = redisTemplate.opsForValue().get(STOCK_PREFIX + productId);
+        return current != null && Integer.parseInt(current.toString()) >= quantity;
+    }
+
+    public void reserveStock(ReserveStockRequest request) {
+        List<String> keys = new ArrayList<>();
+        List<String> args = new ArrayList<>();
+
+        for (ReserveStockRequest.Item item : request.getItems()) {
+            ensureStockInRedis(item.getProductId());
+            keys.add(STOCK_PREFIX + item.getProductId());
+            args.add(item.getQuantity().toString());
+        }
+        args.add(request.getOrderId());
+
+        String result = redisTemplate.execute(reserveStockScript, keys, args.toArray());
+
+        if (result != null && result.startsWith("INSUFFICIENT_STOCK")) {
+            throw new InsufficientStockException("Stock insuficiente para uno de los productos de la orden " + request.getOrderId());
+        }
+        log.info("Stock reservado temporalmente en Redis para orderId={}", request.getOrderId());
     }
 
     @Transactional
-    public boolean checkMultipleAvailability(Map<String, Integer> items) {
-        if (items.isEmpty()) return true;
-        List<Inventory> inventories = repository.findActiveByProductIds(items.keySet());
-        Map<String, Inventory> invMap = inventories.stream().collect(Collectors.toMap(Inventory::getProductId, i -> i));
-        for (Map.Entry<String, Integer> entry : items.entrySet()) {
-            Inventory inv = invMap.get(entry.getKey());
-            if (inv == null || inv.getAvailableQuantity() < entry.getValue()) return false;
-        }
-        return true;
-    }
-
-    @Transactional
-    public void deductStock(OrderCreatedEvent event) {
-        // 🔥 BUENA PRÁCTICA: Validar en la BD si el evento ya se procesó
-        if (processedEventRepository.existsById(event.getOrderId())) {
-            log.info("Orden {} ya descontada previamente. Ignorando duplicado de RabbitMQ.", event.getOrderId());
-            return;
-        }
-
-        for (OrderCreatedEvent.OrderItemEvent item : event.getItems()) {
+    public void deductStock(OrderPaidEvent event) {
+        for (OrderPaidEvent.OrderItemEvent item : event.getItems()) {
             int updated = repository.deductStock(item.getProductId(), item.getQuantity());
             if (updated == 0) {
-                throw new InsufficientStockException("Stock insuficiente para producto " + item.getProductId());
+                log.error("Discrepancia DB-Redis para producto {}", item.getProductId());
+                throw new InsufficientStockException("No se pudo confirmar el stock físico para " + item.getProductId());
             }
         }
+        redisTemplate.delete("reserve:" + event.getOrderId());
+        log.info("Stock confirmado permanentemente en DB para orderId={}", event.getOrderId());
+    }
 
-        processedEventRepository.save(new ProcessedEvent(event.getOrderId(), LocalDateTime.now()));
-        log.info("Stock descontado correctamente para orderId={}", event.getOrderId());
+    public void releaseReservation(String orderId) {
+        String result = redisTemplate.execute(releaseStockScript, Collections.emptyList(), orderId);
+        if ("OK".equals(result)) {
+            log.info("Stock temporal liberado/restaurado en Redis para orderId={}", orderId);
+        } else {
+            log.warn("No se encontró reserva para liberar en Redis para orderId={}", orderId);
+        }
     }
 
     @Transactional
     public void updateStock(String productId, int quantity) {
-        Inventory inv = getInventory(productId);
+        Inventory inv = repository.findByProductId(productId).orElseThrow();
         inv.setAvailableQuantity(Math.max(0, quantity));
         repository.save(inv);
-    }
-
-    private Inventory getActiveInventory(String productId) {
-        return repository.findByProductId(productId).filter(Inventory::isActive)
-                .orElseThrow(() -> new ProductNotFoundException("Producto no encontrado o inactivo: " + productId));
-    }
-
-    private Inventory getInventory(String productId) {
-        return repository.findByProductId(productId)
-                .orElseThrow(() -> new ProductNotFoundException("Producto no encontrado: " + productId));
+        redisTemplate.opsForValue().set(STOCK_PREFIX + productId, String.valueOf(Math.max(0, quantity)));
     }
 }

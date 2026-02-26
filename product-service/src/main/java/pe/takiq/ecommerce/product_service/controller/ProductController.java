@@ -6,6 +6,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.*;
 import pe.takiq.ecommerce.product_service.dto.ProductDetailDTO;
+import pe.takiq.ecommerce.product_service.dto.ProductPriceDTO;
 import pe.takiq.ecommerce.product_service.model.Product;
 import pe.takiq.ecommerce.product_service.service.ProductService;
 
@@ -81,5 +82,10 @@ public Page<Product> getAll(
     public Page<Product> getPopular(@RequestParam(defaultValue = "0") int page,
                                     @RequestParam(defaultValue = "10") int size) {
         return service.getPopular(PageRequest.of(page, size));
+    }
+
+    @PostMapping("/bulk-prices")
+    public List<ProductPriceDTO> getBulkPrices(@RequestBody List<String> productIds) {
+        return service.getBulkPrices(productIds);
     }
 }

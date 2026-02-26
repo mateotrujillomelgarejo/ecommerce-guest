@@ -2,7 +2,7 @@ package pe.takiq.ecommerce.notification_service.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import pe.takiq.ecommerce.notification_service.events.OrderCreatedEvent;
+import pe.takiq.ecommerce.notification_service.events.OrderPaidEvent;
 import pe.takiq.ecommerce.notification_service.events.OrderShippedEvent;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -32,19 +32,20 @@ public class EmailNotificationService {
     @Value("${notification.from}")
     private String fromEmail;
 
-    public void sendOrderCreatedNotification(OrderCreatedEvent event) {
+    public void sendOrderPaidNotification(OrderPaidEvent event) {
         if (event.getGuestEmail() == null || event.getGuestEmail().isBlank()) return;
 
-        String lockKey = "lock:email:created:" + event.getOrderId();
+        // ACTUALIZADO: La key de idempotencia refleja el estado pagado
+        String lockKey = "lock:email:paid:" + event.getOrderId();
         Boolean isFirstTime = redisTemplate.opsForValue().setIfAbsent(lockKey, "SENT", Duration.ofDays(7));
         
         if (Boolean.FALSE.equals(isFirstTime)) {
-            log.info("El correo de Confirmación de la orden {} ya se envió. Ignorando.", event.getOrderId());
+            log.info("El correo de Pago Aprobado de la orden {} ya se envió. Ignorando.", event.getOrderId());
             return;
         }
         
-        String subject = "¡Tu pedido está confirmado! #" + event.getOrderId();
-        String htmlContent = buildOrderCreatedTemplate(event);
+        String subject = "¡Pago Aprobado! Confirmación de Pedido #" + event.getOrderId();
+        String htmlContent = buildOrderPaidTemplate(event);
         sendEmail(event.getGuestEmail(), subject, htmlContent);
     }
 
@@ -67,10 +68,16 @@ public class EmailNotificationService {
         context.setVariable("carrier", event.getCarrier());
 
         String htmlContent = templateEngine.process("shipping-confirmation-email", context);
-        sendEmail(event.getGuestEmail(), subject, htmlContent);
+
+        try{
+            sendEmail(event.getGuestEmail(), subject, htmlContent);
+        } catch (Exception e) {
+            redisTemplate.delete(lockKey);
+            throw e;
+        }
     }
 
-    private String buildOrderCreatedTemplate(OrderCreatedEvent event) {
+    private String buildOrderPaidTemplate(OrderPaidEvent event) {
         String formattedTotal = event.getTotal() != null ? String.format("%.2f", event.getTotal()) : "0.00";
         Context context = new Context();
         context.setVariable("orderId", event.getOrderId());
@@ -78,7 +85,7 @@ public class EmailNotificationService {
         context.setVariable("items", event.getItems());
         context.setVariable("createdAt", event.getCreatedAt());
 
-        return templateEngine.process("order-created-email", context);
+        return templateEngine.process("order-paid-email", context);
     }
 
     private void sendEmail(String to, String subject, String htmlContent) {
@@ -90,6 +97,7 @@ public class EmailNotificationService {
                 helper.setTo(to);
                 helper.setSubject(subject);
                 helper.setText(htmlContent, true);
+
                 mailSender.send(message);
                 log.info("Email enviado OK a: {}", to);
                 return null;
@@ -98,7 +106,7 @@ public class EmailNotificationService {
             }
         }, recovery -> {
             log.error("Fallo definitivo enviando email a {} → {}", to, recovery.getLastThrowable().getMessage());
-            return null;
+            throw new RuntimeException("Fallo al enviar correo después de reintentos", recovery.getLastThrowable());
         });
     }
 }

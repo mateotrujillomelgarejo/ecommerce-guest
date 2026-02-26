@@ -9,6 +9,11 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+
 @Configuration
 public class RabbitMQConfig {
 
@@ -17,7 +22,7 @@ public class RabbitMQConfig {
     public static final String ORDER_CREATED_QUEUE = "shipping.order-created.queue";
     public static final String ORDER_CREATED_DLQ   = "shipping.order-created.dlq";
 
-    public static final String ROUTING_KEY_CREATED = "order.created";
+    public static final String ROUTING_KEY_CREATED = "order.paid";
     public static final String ROUTING_KEY_SHIPPED = "order.shipped";
 
     @Bean
@@ -59,12 +64,18 @@ public Binding dlqBinding(
 }
 
 
-    @Bean
-    public Jackson2JsonMessageConverter jsonConverter() {
-        Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter();
-        converter.setTypePrecedence(Jackson2JavaTypeMapper.TypePrecedence.INFERRED);
-        return converter;
-    }
+@Bean
+public Jackson2JsonMessageConverter jsonMessageConverter() {
+    ObjectMapper objectMapper = new ObjectMapper();
+    objectMapper.registerModule(new JavaTimeModule()); // Soporte para LocalDateTime
+    objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS); // Formato ISO-8601 (String)
+
+    objectMapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES); 
+
+    Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter(objectMapper);
+    converter.setTypePrecedence(Jackson2JavaTypeMapper.TypePrecedence.INFERRED);
+    return converter;
+}
 
     @Bean
     public RabbitTemplate rabbitTemplate(

@@ -13,20 +13,10 @@ spring:
       host: localhost
       port: 6379
 
-  datasource:
-    url: jdbc:postgresql://localhost:5432/ecommerce_cart
-    username: ecommerce_cart_user
-    password: CartPass123!
-    driver-class-name: org.postgresql.Driver
-
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-        format_sql: true
+  cloud:
+    openfeign:
+      circuitbreaker:
+        enabled: true
 
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:default}
@@ -40,10 +30,10 @@ inventory-service:
 pricing-service:
   url: ${PRICING_SERVICE_URL:http://localhost:8090}
 
-  cart:
-    cache:
-      enabled: true
-      ttl-days: 14
+cart:
+  cache:
+    enabled: true
+    ttl-days: 14
 
 eureka:
   client:
@@ -54,3 +44,21 @@ eureka:
 
   instance:
     prefer-ip-address: true
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      pricingService:
+        slidingWindowSize: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+      inventoryService:
+        slidingWindowSize: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+  retry:
+    instances:
+      productService:
+        maxAttempts: 3
+        waitDuration: 2s

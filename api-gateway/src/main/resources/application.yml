@@ -69,3 +69,10 @@ logging:
   level:
     com.netflix.discovery: DEBUG
     org.springframework.cloud.gateway: DEBUG
+
+
+    #          filters:
+            #- name: LocalResponseCache
+             # args:
+              #  timeToLive: 30s
+               # size: 10MB 

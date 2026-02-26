@@ -27,4 +27,6 @@ public class Product {
     private Double averageRating;
 
     private List<String> tags;
+
+    private boolean active = true; 
 }

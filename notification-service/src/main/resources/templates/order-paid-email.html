@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Confirmación de Pago</title>
+</head>
+<body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+    <h1 style="color: #4CAF50;">¡Tu pedido está confirmado y pagado!</h1>
+    <p>Hemos procesado correctamente tu pago y tu orden ha ingresado a nuestra cola de preparación.</p>
+    
+    <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+        <h3>Detalles de la compra</h3>
+        <p><strong>Número de pedido:</strong> <span th:text="${orderId}"></span></p>
+        <p><strong>Total pagado:</strong> S/ <span th:text="${total}"></span></p>
+    </div>
+    
+    <h4>Productos Adquiridos:</h4>
+    <ul>
+        <li th:each="item : ${items}">
+            <strong>Producto ID:</strong> <span th:text="${item.productId}"></span> 
+            | <strong>Cantidad:</strong> <span th:text="${item.quantity}"></span>
+        </li>
+    </ul>
+    
+    <p style="margin-top: 20px;">Te enviaremos un nuevo correo tan pronto como tu pedido sea despachado, incluyendo el número de seguimiento logístico.</p>
+    <p>¡Gracias por confiar en nosotros!</p>
+</body>
+</html>

@@ -1,12 +1,11 @@
 package pe.takiq.ecommerce.cart_service.service;
 
 import java.util.Optional;
-
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
-import lombok.experimental.var;
+import lombok.extern.slf4j.Slf4j;
 import pe.takiq.ecommerce.cart_service.client.InventoryClient;
 import pe.takiq.ecommerce.cart_service.client.PricingClient;
 import pe.takiq.ecommerce.cart_service.client.ProductClient;
@@ -19,24 +18,17 @@ import pe.takiq.ecommerce.cart_service.dto.response.PriceCalculationResponse;
 import pe.takiq.ecommerce.cart_service.mapper.CartMapper;
 import pe.takiq.ecommerce.cart_service.model.Cart;
 import pe.takiq.ecommerce.cart_service.model.CartItem;
-import pe.takiq.ecommerce.cart_service.repository.CartRepository;
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
-import io.github.resilience4j.retry.annotation.Retry;
-
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class CartService {
 
-    private final CartRepository repository;        // opcional ahora
     private final CartCacheService cacheService;
     private final InventoryClient inventoryClient;
     private final ProductClient productClient;
     private final PricingClient pricingClient;
     private final CartMapper mapper;
-
-    @Value("${cart.cache.enabled:true}")
-    private boolean cacheEnabled;
 
     public Cart getOrCreateCart(String sessionId) {
         return cacheService.getCart(sessionId)
@@ -46,23 +38,14 @@ public class CartService {
                 });
     }
 
-    public Cart getCartEntity(String sessionId) {
-        return getOrCreateCart(sessionId); // ya maneja creación
-    }
-
-    @CircuitBreaker(name = "inventoryClient", fallbackMethod = "inventoryFallback")
-    @Retry(name = "inventoryClient")
     public Cart addItem(String sessionId, AddItemRequestDTO req) {
-        Cart cart = getCartEntity(sessionId);
+        Cart cart = getOrCreateCart(sessionId);
 
-        // Verificar stock
-        if (!Boolean.TRUE.equals(inventoryClient.checkStock(req.getProductId(), req.getQuantity()))) {
-            throw new RuntimeException("Stock insuficiente");
+        if (!checkStockResilient(req.getProductId(), req.getQuantity())) {
+            log.warn("Stock insuficiente o servicio Inventory no disponible para el producto: {}", req.getProductId());
+            return cart; 
         }
 
-        ProductDTO product = productClient.getProduct(req.getProductId());
-
-        // Buscar si ya existe → sumar cantidad
         Optional<CartItem> existing = cart.getItems().stream()
                 .filter(i -> i.getProductId().equals(req.getProductId()))
                 .findFirst();
@@ -71,89 +54,112 @@ public class CartService {
             CartItem item = existing.get();
             item.setQuantity(item.getQuantity() + req.getQuantity());
         } else {
-            CartItem item = new CartItem();
-            item.setProductId(product.getId());
-            item.setProductName(product.getName());
-            item.setPrice(product.getPrice());
-            item.setQuantity(req.getQuantity());
-            cart.getItems().add(item);
+            try {
+                ProductDTO product = getProductResilient(req.getProductId());
+                CartItem item = new CartItem();
+                item.setProductId(product.getId());
+                item.setProductName(product.getName());
+                // OPTIMIZACIÓN LOGRADA: Snapshot local guardado en caché para evitar consultas futuras
+                item.setPrice(product.getPrice()); 
+                item.setQuantity(req.getQuantity());
+                cart.getItems().add(item);
+            } catch (Exception e) {
+                log.error("Product Service inalcanzable. Omitiendo agregado de item.", e);
+            }
         }
 
-        return saveCart(cart);
+        return cacheService.saveCart(cart);
     }
 
     public Cart updateItem(String sessionId, UpdateItemRequestDTO req) {
-        Cart cart = getCartEntity(sessionId);
-        cart.updateQuantity(req.getProductId(), req.getQuantity());
-        return saveCart(cart);
-    }
+        Cart cart = getOrCreateCart(sessionId);
 
+        if (req.getQuantity() > 0) {
+            if (!checkStockResilient(req.getProductId(), req.getQuantity())) {
+                log.warn("Stock insuficiente o servicio no disponible para actualizar: {}", req.getProductId());
+                return cart;
+            }
+        }
+
+        cart.updateQuantity(req.getProductId(), req.getQuantity());
+        return cacheService.saveCart(cart);
+    }
 
     public Cart removeItem(String sessionId, String productId) {
-        Cart cart = getCartEntity(sessionId);
+        Cart cart = getOrCreateCart(sessionId);
         cart.getItems().removeIf(i -> i.getProductId().equals(productId));
-
-        if (cacheEnabled) {
-            return cacheService.saveCart(cart);
-        } else {
-            return repository.save(cart);
-        }
+        return cacheService.saveCart(cart);
     }
 
-    private Cart saveCart(Cart cart) {
-        if (cacheEnabled) {
-            return cacheService.saveCart(cart);
-        } else {
-            return repository.save(cart);
+    public CartResponseDTO toFullResponse(Cart cart) {
+        CartResponseDTO response = mapper.toResponse(cart);
+
+        if (cart.getItems() == null || cart.getItems().isEmpty()) {
+            response.setSubtotal(0.0);
+            response.setDiscount(0.0);
+            response.setTax(0.0);
+            response.setShippingEstimate(0.0);
+            response.setTotal(0.0);
+            return response;
         }
-    }
 
-    public Cart inventoryFallback(
-        String sessionId,
-        AddItemRequestDTO req,
-        Throwable t
-) {
-    // Recuperar el carrito actual
-    Cart cart = getOrCreateCart(sessionId);
-    return cart;
-}
+        PriceCalculationRequest pricingReq = new PriceCalculationRequest();
+        pricingReq.setItems(
+            cart.getItems().stream().map(i -> {
+                var item = new PriceCalculationRequest.CartItem();
+                item.setProductId(i.getProductId());
+                item.setQuantity(i.getQuantity());
+                return item;
+            }).toList()
+        );
 
+        try {
+            PriceCalculationResponse pricing = calculatePricingResilient(pricingReq);
+            response.setSubtotal(pricing.getSubtotal().doubleValue());
+            response.setDiscount(pricing.getDiscountAmount().doubleValue());
+            response.setTax(pricing.getTaxAmount().doubleValue());
+            response.setShippingEstimate(pricing.getShippingAmount().doubleValue());
+            response.setTotal(pricing.getTotal().doubleValue());
+        } catch (Exception e) {
+            log.warn("Pricing Service inalcanzable. Calculando precios base localmente usando el Snapshot de Redis.");
+            // OPTIMIZACIÓN APLICADA: Si Pricing falla, usamos el Snapshot garantizando continuidad del negocio.
+            double fallbackSubtotal = cart.getItems().stream()
+                    .mapToDouble(i -> (i.getPrice() != null ? i.getPrice() : 0.0) * i.getQuantity())
+                    .sum();
+            
+            response.setSubtotal(fallbackSubtotal);
+            response.setDiscount(0.0);
+            response.setTax(fallbackSubtotal * 0.18);
+            response.setShippingEstimate(0.0);
+            response.setTotal(fallbackSubtotal + (fallbackSubtotal * 0.18));
+        }
 
-public CartResponseDTO toFullResponse(Cart cart) {
-
-    CartResponseDTO response = mapper.toResponse(cart);
-
-    if (cart.getItems() == null || cart.getItems().isEmpty()) {
-        response.setSubtotal(0.0);
-        response.setDiscount(0.0);
-        response.setTax(0.0);
-        response.setShippingEstimate(0.0);
-        response.setTotal(0.0);
         return response;
     }
 
-    PriceCalculationRequest pricingReq = new PriceCalculationRequest();
-    pricingReq.setItems(
-        cart.getItems().stream().map(i -> {
-            var item = new PriceCalculationRequest.CartItem();
-            item.setProductId(i.getProductId());
-            item.setQuantity(i.getQuantity());
-            return item;
-        }).toList()
-    );
+    // --- MÉTODOS DE RESILIENCIA AISLADOS ---
 
-    PriceCalculationResponse pricing = pricingClient.calculate(pricingReq);
+    @CircuitBreaker(name = "inventoryService", fallbackMethod = "checkStockFallback")
+    private Boolean checkStockResilient(String productId, Integer quantity) {
+        return inventoryClient.checkStock(productId, quantity);
+    }
 
-    response.setSubtotal(pricing.getSubtotal().doubleValue());
-    response.setDiscount(pricing.getDiscountAmount().doubleValue());
-    response.setTax(pricing.getTaxAmount().doubleValue());
-    response.setShippingEstimate(pricing.getShippingAmount().doubleValue());
-    response.setTotal(pricing.getTotal().doubleValue());
+    private Boolean checkStockFallback(String productId, Integer quantity, Throwable t) {
+        log.error("Fallback activado: Inventory-Service inalcanzable. Bloqueando adición.");
+        return false;
+    }
 
-    return response;
-}
+    @Retry(name = "productService")
+    private ProductDTO getProductResilient(String productId) {
+        return productClient.getProduct(productId);
+    }
 
+    @CircuitBreaker(name = "pricingService")
+    private PriceCalculationResponse calculatePricingResilient(PriceCalculationRequest request) {
+        return pricingClient.calculate(request);
+    }
 
+    // --- WRAPPERS ---
 
     public CartResponseDTO addItemFull(String sessionId, AddItemRequestDTO req) {
         Cart cart = addItem(sessionId, req);
@@ -171,8 +177,7 @@ public CartResponseDTO toFullResponse(Cart cart) {
     }
 
     public CartResponseDTO getCartFull(String sessionId) {
-        Cart cart = getCartEntity(sessionId);
+        Cart cart = getOrCreateCart(sessionId);
         return toFullResponse(cart);
     }
-
 }

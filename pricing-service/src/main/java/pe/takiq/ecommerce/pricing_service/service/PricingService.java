@@ -3,8 +3,7 @@ package pe.takiq.ecommerce.pricing_service.service;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import pe.takiq.ecommerce.pricing_service.client.ProductClient;
 import pe.takiq.ecommerce.pricing_service.dto.*;
@@ -19,7 +18,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -30,21 +31,32 @@ public class PricingService {
     private final CouponRepository couponRepository;
     private final PromotionRepository promotionRepository;
 
+    private final RedisTemplate<String, Object> redisTemplate;
+    private static final String REDIS_HASH_KEY = "materialized_prices";
     private static final BigDecimal DEFAULT_TAX_RATE = new BigDecimal("0.18");
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
 
-    @Cacheable("pricing")
+    // 🔥 FIX: Eliminado @Cacheable para evitar precios desactualizados
     public PriceCalculationResponse calculatePrice(PriceCalculationRequest request) {
         validateRequest(request);
+
+        List<String> productIds = request.getItems().stream()
+                .map(CartItem::getProductId)
+                .collect(Collectors.toList());
+
+        Map<String, BigDecimal> productPrices = getBulkProductPrices(productIds);
 
         BigDecimal subtotalBeforeDiscounts = ZERO;
         BigDecimal totalDiscount = ZERO;
         List<ItemPrice> detailedItems = new ArrayList<>();
 
         for (CartItem item : request.getItems()) {
-            BigDecimal basePrice = getProductPrice(item.getProductId());
-            BigDecimal effectiveUnitPrice = applyProductPromotions(basePrice, item.getProductId());
+            BigDecimal basePrice = productPrices.getOrDefault(item.getProductId(), ZERO);
+            if (basePrice.equals(ZERO)) {
+                log.warn("El producto {} no devolvió un precio válido. Se asume 0.", item.getProductId());
+            }
 
+            BigDecimal effectiveUnitPrice = applyProductPromotions(basePrice, item.getProductId());
             BigDecimal originalLine = effectiveUnitPrice.multiply(BigDecimal.valueOf(item.getQuantity()));
             subtotalBeforeDiscounts = subtotalBeforeDiscounts.add(originalLine);
 
@@ -59,24 +71,34 @@ public class PricingService {
 
         String appliedCoupon = null;
         BigDecimal couponDiscount = ZERO;
+        
         if (request.getCouponCode() != null && !request.getCouponCode().isBlank()) {
             Optional<Coupon> couponOpt = couponRepository.findByCodeAndActiveTrue(request.getCouponCode());
+            
             if (couponOpt.isPresent()) {
                 Coupon coupon = couponOpt.get();
-                if (coupon.getDiscountPercent() != null) {
-                    couponDiscount = subtotalBeforeDiscounts.multiply(coupon.getDiscountPercent());
-                } else if (coupon.getDiscountAmount() != null) {
-                    couponDiscount = coupon.getDiscountAmount().min(subtotalBeforeDiscounts);
+                
+                // 🔥 FIX: Verificamos límite de uso, pero NO incrementamos el uso en base de datos aquí.
+                boolean isUsageValid = coupon.getMaxUses() == null || coupon.getUsesCount() < coupon.getMaxUses();
+                
+                if (isUsageValid) {
+                    if (coupon.getDiscountPercent() != null) {
+                        couponDiscount = subtotalBeforeDiscounts.multiply(coupon.getDiscountPercent());
+                    } else if (coupon.getDiscountAmount() != null) {
+                        couponDiscount = coupon.getDiscountAmount().min(subtotalBeforeDiscounts);
+                    }
+                    totalDiscount = totalDiscount.add(couponDiscount);
+                    appliedCoupon = coupon.getCode();
+                    // SE ELIMINÓ: couponRepository.incrementUses()
+                } else {
+                    log.warn("Cupón {} alcanzó su límite máximo de usos.", coupon.getCode());
                 }
-                totalDiscount = totalDiscount.add(couponDiscount);
-                appliedCoupon = coupon.getCode();
-                couponRepository.incrementUses(coupon.getCode());
             }
         }
 
         BigDecimal subtotalAfterDiscounts = subtotalBeforeDiscounts.subtract(totalDiscount);
         BigDecimal tax = subtotalAfterDiscounts.multiply(DEFAULT_TAX_RATE).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal shipping = calculateShippingPlaceholder(subtotalAfterDiscounts); // Futuro: call shipping-service
+        BigDecimal shipping = calculateShippingPlaceholder(subtotalAfterDiscounts); 
 
         BigDecimal grandTotal = subtotalAfterDiscounts.add(tax).add(shipping);
 
@@ -92,16 +114,41 @@ public class PricingService {
         return response;
     }
 
-    @CircuitBreaker(name = "productClient", fallbackMethod = "productPriceFallback")
-    @Cacheable(value = "productPrices", key = "#productId")
-    protected BigDecimal getProductPrice(String productId) {
-        ProductPriceDTO dto = productClient.getProductPrice(productId);
-        return dto.getPrice();
+    protected Map<String, BigDecimal> getBulkProductPrices(List<String> productIds) {
+        Map<String, BigDecimal> prices = new java.util.HashMap<>();
+        List<String> missingInRedis = new java.util.ArrayList<>();
+
+        for (String id : productIds) {
+            Object cachedPrice = redisTemplate.opsForHash().get(REDIS_HASH_KEY, id);
+            if (cachedPrice != null) {
+                prices.put(id, new BigDecimal(cachedPrice.toString()));
+            } else {
+                missingInRedis.add(id);
+            }
+        }
+
+        if (!missingInRedis.isEmpty()) {
+            // 🔥 FIX: Llamada delegada al método protegido por CircuitBreaker
+            List<ProductPriceDTO> fallbackPrices = fetchPricesConResiliencia(missingInRedis);
+            for (ProductPriceDTO dto : fallbackPrices) {
+                prices.put(dto.getId(), dto.getPrice());
+                redisTemplate.opsForHash().put(REDIS_HASH_KEY, dto.getId(), dto.getPrice().toString());
+            }
+        }
+        return prices;
     }
 
-    protected BigDecimal productPriceFallback(String productId, Throwable t) {
-        log.error("Fallo crítico: No se pudo obtener el precio del producto {}.", productId, t);
-        throw new RuntimeException("Servicio de catálogo de precios temporalmente no disponible. Intente en unos minutos.");
+    // 🔥 FIX: Circuit Breaker implementado correctamente en código
+    @CircuitBreaker(name = "productClient", fallbackMethod = "fetchPricesFallback")
+    public List<ProductPriceDTO> fetchPricesConResiliencia(List<String> productIds) {
+        return productClient.getBulkPrices(productIds);
+    }
+
+    public List<ProductPriceDTO> fetchPricesFallback(List<String> productIds, Throwable ex) {
+        log.error("Product Service inalcanzable. Usando precio 0.0 temporalmente. Causa: {}", ex.getMessage());
+        return productIds.stream()
+                .map(id -> new ProductPriceDTO(id, BigDecimal.ZERO))
+                .collect(Collectors.toList());
     }
 
     private BigDecimal applyProductPromotions(BigDecimal basePrice, String productId) {
@@ -114,7 +161,6 @@ public class PricingService {
     }
 
     private BigDecimal calculateShippingPlaceholder(BigDecimal subtotal) {
-        // Placeholder simple (futuro: Feign a shipping-service)
         if (subtotal.compareTo(new BigDecimal("300")) >= 0) return ZERO;
         if (subtotal.compareTo(new BigDecimal("100")) >= 0) return new BigDecimal("10.00");
         return new BigDecimal("15.00");
@@ -126,9 +172,8 @@ public class PricingService {
         }
     }
 
-    // Para invalidar cuando admin crea/actualiza promoción o cupón
-    @CacheEvict(value = {"productPrices", "priceCalculations"}, allEntries = true)
+    // Se mantiene el método, pero solo loguea porque ya no usamos @Cacheable en Spring para el cotizador
     public void invalidateCaches() {
-        log.info("Invalidando cachés de precios tras cambio en reglas");
+        log.info("Reglas de precios (cupones/promociones) actualizadas.");
     }
 }

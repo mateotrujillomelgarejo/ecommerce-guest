@@ -16,16 +16,22 @@ public class Order {
     private String id = UUID.randomUUID().toString();
     private String guestId;
     
-    private String sessionId;  // NUEVO
-    private String guestEmail; // NUEVO
+    private String sessionId;  
+    private String guestEmail; 
     
     @ElementCollection
     private List<OrderItem> items;
+    
     private BigDecimal totalAmount;
     private String paymentId;
+    
     @Enumerated(EnumType.STRING)
     private OrderStatus status = OrderStatus.PAYMENT_PENDING;
+    
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    private String trackingNumber;
+    private String failureReason; 
 
     @Embeddable
     @Data

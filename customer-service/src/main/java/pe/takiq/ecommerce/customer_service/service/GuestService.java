@@ -2,15 +2,12 @@ package pe.takiq.ecommerce.customer_service.service;
 
 import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import pe.takiq.ecommerce.customer_service.config.RabbitMQConfig;
 import pe.takiq.ecommerce.customer_service.dto.AddressRequestDTO;
 import pe.takiq.ecommerce.customer_service.dto.GuestRequestDTO;
 import pe.takiq.ecommerce.customer_service.dto.GuestResponseDTO;
-import pe.takiq.ecommerce.customer_service.events.GuestCreatedEvent;
 import pe.takiq.ecommerce.customer_service.model.Guest;
 import pe.takiq.ecommerce.customer_service.repository.GuestRepository;
 
@@ -22,7 +19,6 @@ public class GuestService {
 
     private final GuestRepository repository;
     private final GuestCacheService cacheService;
-    private final RabbitTemplate rabbitTemplate;
 
     @Value("${guest.cache.enabled:true}")
     private boolean cacheEnabled;
@@ -30,8 +26,15 @@ public class GuestService {
     @Transactional
     @Retry(name = "guestService")
     public GuestResponseDTO createGuest(GuestRequestDTO request) {
+        // Verificar si existe para no duplicar (y usar caché para optimizar lectura)
+        if (cacheEnabled) {
+            Optional<Guest> cached = cacheService.getGuestBySessionId(request.getSessionId());
+            if (cached.isPresent()) return toResponse(cached.get());
+        }
+
         Optional<Guest> existing = repository.findBySessionId(request.getSessionId());
         if (existing.isPresent()) {
+            if (cacheEnabled) cacheService.saveGuest(existing.get());
             return toResponse(existing.get());
         }
 
@@ -43,13 +46,6 @@ public class GuestService {
 
         Guest saved = repository.save(guest);
 
-        GuestCreatedEvent event = GuestCreatedEvent.builder()
-                .guestId(saved.getId())
-                .sessionId(saved.getSessionId())
-                .email(saved.getEmail())
-                .build();
-        rabbitTemplate.convertAndSend(RabbitMQConfig.GUEST_EVENTS_EXCHANGE, "guest.created", event);
-
         if (cacheEnabled) {
             cacheService.saveGuest(saved);
         }
@@ -58,14 +54,28 @@ public class GuestService {
     }
 
     public GuestResponseDTO getGuestBySessionId(String sessionId) {
+        if (cacheEnabled) {
+            Optional<Guest> cached = cacheService.getGuestBySessionId(sessionId);
+            if (cached.isPresent()) return toResponse(cached.get());
+        }
+
         Guest guest = repository.findBySessionId(sessionId)
                 .orElseThrow(() -> new RuntimeException("Guest no encontrado por sessionId"));
+        
+        if (cacheEnabled) cacheService.saveGuest(guest);
         return toResponse(guest);
     }
 
     public GuestResponseDTO getGuestByEmail(String email) {
+        if (cacheEnabled) {
+            Optional<Guest> cached = cacheService.getGuestByEmail(email);
+            if (cached.isPresent()) return toResponse(cached.get());
+        }
+
         Guest guest = repository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("Guest no encontrado por email"));
+                
+        if (cacheEnabled) cacheService.saveGuest(guest);
         return toResponse(guest);
     }
 
@@ -88,7 +98,7 @@ public class GuestService {
 
     private Guest getGuestEntity(String guestId) {
         if (cacheEnabled) {
-            return cacheService.getGuest(guestId)
+            return cacheService.getGuestById(guestId)
                     .orElseGet(() -> repository.findById(guestId)
                             .orElseThrow(() -> new RuntimeException("Guest no encontrado")));
         } else {

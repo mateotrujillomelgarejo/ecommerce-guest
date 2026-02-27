@@ -1,16 +1,22 @@
 version: '3.9'
 
+networks:
+  ecommerce-net:
+    driver: bridge
+
 services:
 
-  # ================= CONFIG / DISCOVERY =================
+  # ==========================================
+  # 1. INFRAESTRUCTURA CORE (Discovery & Config)
+  # ==========================================
 
   config-server:
     build: ./config-server
     container_name: config-server
     ports:
       - "8888:8888"
-    environment:
-      - SPRING_PROFILES_ACTIVE=docker
+    networks:
+      - ecommerce-net
 
   discovery-service:
     build: ./discovery-service
@@ -18,24 +24,29 @@ services:
     ports:
       - "8761:8761"
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
       - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
     depends_on:
       - config-server
+    networks:
+      - ecommerce-net
 
-  gateway:
+  api-gateway:
     build: ./api-gateway
-    container_name: gateway
+    container_name: api-gateway
     ports:
       - "8080:8080"
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
       - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+      - EUREKA_HOST=discovery-service
     depends_on:
+      - config-server
       - discovery-service
+    networks:
+      - ecommerce-net
 
-  # ================= INFRAESTRUCTURA =================
+  # ==========================================
+  # 2. BROKERS Y CACHÉ
+  # ==========================================
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -44,6 +55,13 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ecommerce-net
 
   redis-cache:
     image: redis:7-alpine
@@ -52,8 +70,14 @@ services:
     ports:
       - "6379:6379"
     command: redis-server --appendonly yes
+    networks:
+      - ecommerce-net
+    volumes:
+      - redis-data:/data
 
-  # ================= PRODUCT (MongoDB) =================
+  # ==========================================
+  # 3. BASES DE DATOS
+  # ==========================================
 
   mongo-product:
     image: mongo:6.0
@@ -65,23 +89,21 @@ services:
       MONGO_INITDB_DATABASE: ecommerce_product
     ports:
       - "27017:27017"
+    networks:
+      - ecommerce-net
 
-  product:
-    build: ./product-service
-    container_name: product-service
-    ports:
-      - "8081:8081"
+  postgres-cart:
+    image: postgres:16
+    container_name: postgres-cart
+    restart: always
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
-      - SPRING_DATA_MONGODB_URI=mongodb://product_user:Product123@mongo-product:27017/ecommerce_product?authSource=admin
-      - SPRING_RABBITMQ_HOST=rabbitmq
-      - SPRING_DATA_REDIS_HOST=redis-cache
-      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
-    depends_on:
-      - mongo-product
-
-  # ================= INVENTORY (Postgres) =================
+      POSTGRES_DB: ecommerce_cart
+      POSTGRES_USER: ecommerce_cart_user
+      POSTGRES_PASSWORD: CartPass123!
+    ports:
+      - "5435:5432"
+    networks:
+      - ecommerce-net
 
   postgres-inventory:
     image: postgres:16
@@ -93,45 +115,9 @@ services:
       POSTGRES_PASSWORD: InventoryPass123!
     ports:
       - "5436:5432"
+    networks:
+      - ecommerce-net
 
-  inventory:
-    build: ./inventory-service
-    container_name: inventory-service
-    ports:
-      - "8084:8084"
-    environment:
-      - SPRING_PROFILES_ACTIVE=docker
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-inventory:5432/inventory_db
-      - SPRING_DATASOURCE_USERNAME=inventory_user
-      - SPRING_DATASOURCE_PASSWORD=InventoryPass123!
-      - SPRING_RABBITMQ_HOST=rabbitmq
-      - SPRING_DATA_REDIS_HOST=redis-cache
-      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
-    depends_on:
-      - postgres-inventory
-      - rabbitmq
-
-  # ================= CART (Redis only) =================
-
-  cart:
-    build: ./cart-service
-    container_name: cart-service
-    ports:
-      - "8082:8082"
-    environment:
-      - SPRING_PROFILES_ACTIVE=docker
-      - SPRING_DATA_REDIS_HOST=redis-cache
-      - SPRING_RABBITMQ_HOST=rabbitmq
-      - PRODUCT_SERVICE_URL=http://product-service:8081
-      - INVENTORY_SERVICE_URL=http://inventory-service:8084
-      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
-    depends_on:
-      - redis-cache
-
-  # ================= ORDER (SQL Server) =================
-  
   sqlserver-order:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: sqlserver-order
@@ -142,38 +128,13 @@ services:
       MSSQL_PID: Express
     ports:
       - "1435:1433"
-    # Este healthcheck crea la base de datos "orderdb" si no existe.
     healthcheck:
       test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'TuPasswordFuerte123!' -C -Q \"IF NOT EXISTS (SELECT * FROM sys.databases WHERE name = 'orderdb') BEGIN CREATE DATABASE orderdb; END\" && /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'TuPasswordFuerte123!' -C -Q \"SELECT 1\""]
       interval: 10s
       timeout: 10s
       retries: 10
-
-  order:
-    build: ./order-service
-    container_name: order-service
-    ports:
-      - "8083:8083"
-    environment:
-      - SPRING_PROFILES_ACTIVE=docker
-      # Conexión directa a SQL Server sobreescribiendo la configuración local
-      - SPRING_DATASOURCE_URL=jdbc:sqlserver://sqlserver-order:1433;databaseName=orderdb;encrypt=true;trustServerCertificate=true
-      - SPRING_DATASOURCE_USERNAME=sa
-      - SPRING_DATASOURCE_PASSWORD=TuPasswordFuerte123!
-      - SPRING_RABBITMQ_HOST=rabbitmq
-      - SPRING_DATA_REDIS_HOST=redis-cache
-      - CUSTOMER_SERVICE_URL=http://customer-service:8085
-      - INVENTORY_SERVICE_URL=http://inventory-service:8084
-      - PRICING_SERVICE_URL=http://pricing-service:8090
-      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
-    depends_on:
-      sqlserver-order:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_started
-
-  # ================= CUSTOMER =================
+    networks:
+      - ecommerce-net
 
   postgres-customer:
     image: postgres:16
@@ -185,25 +146,8 @@ services:
       POSTGRES_PASSWORD: CustomerPass123!
     ports:
       - "5437:5432"
-
-  customer:
-    build: ./customer-service
-    container_name: customer-service
-    ports:
-      - "8085:8085"
-    environment:
-      - SPRING_PROFILES_ACTIVE=docker
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-customer:5432/customer_db
-      - SPRING_DATASOURCE_USERNAME=customer_user
-      - SPRING_DATASOURCE_PASSWORD=CustomerPass123!
-      - SPRING_RABBITMQ_HOST=rabbitmq
-      - SPRING_DATA_REDIS_HOST=redis-cache
-      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
-    depends_on:
-      - postgres-customer
-
-  # ================= PRICING =================
+    networks:
+      - ecommerce-net
 
   postgres-pricing:
     image: postgres:16
@@ -215,23 +159,8 @@ services:
       POSTGRES_PASSWORD: PricingPass123!
     ports:
       - "5438:5432"
-
-  pricing:
-    build: ./pricing-service
-    container_name: pricing-service
-    ports:
-      - "8090:8090"
-    environment:
-      - SPRING_PROFILES_ACTIVE=docker
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-pricing:5432/pricing_db
-      - SPRING_RABBITMQ_HOST=rabbitmq
-      - SPRING_DATA_REDIS_HOST=redis-cache
-      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
-    depends_on:
-      - postgres-pricing
-
-  # ================= PAYMENT =================
+    networks:
+      - ecommerce-net
 
   postgres-payment:
     image: postgres:16
@@ -243,23 +172,8 @@ services:
       POSTGRES_PASSWORD: PaymentPass123!
     ports:
       - "5439:5432"
-
-  payment:
-    build: ./payment-service
-    container_name: payment-service
-    ports:
-      - "8092:8092"
-    environment:
-      - SPRING_PROFILES_ACTIVE=docker
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-payment:5432/payment_db
-      - SPRING_RABBITMQ_HOST=rabbitmq
-      - SPRING_DATA_REDIS_HOST=redis-cache
-      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
-    depends_on:
-      - postgres-payment
-
-  # ================= SHIPPING =================
+    networks:
+      - ecommerce-net
 
   postgres-shipping:
     image: postgres:16
@@ -271,38 +185,188 @@ services:
       POSTGRES_PASSWORD: ShippingPass123!
     ports:
       - "5440:5432"
+    networks:
+      - ecommerce-net
 
-  shipping:
-    build: ./shipping-service
-    container_name: shipping-service
+  # ==========================================
+  # 4. MICROSERVICIOS DE NEGOCIO
+  # ==========================================
+
+  product-service:
+    build: ./product-service
+    container_name: product-service
     ports:
-      - "8091:8091"
+      - "8081:8081"
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-shipping:5432/shipping_db
-      - SPRING_RABBITMQ_HOST=rabbitmq
-      - SPRING_DATA_REDIS_HOST=redis-cache
-      - CUSTOMER_SERVICE_URL=http://customer-service:8085
       - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+      - DB_HOST=mongo-product
+      - REDIS_HOST=redis-cache
+      - RABBITMQ_HOST=rabbitmq
+      - EUREKA_HOST=discovery-service
+      - INVENTORY_SERVICE_URL=http://inventory-service:8084
     depends_on:
-      - postgres-shipping
+      - config-server
+      - discovery-service
+      - mongo-product
+      - rabbitmq
+    networks:
+      - ecommerce-net
 
-  # ================= NOTIFICATION =================
+  cart-service:
+    build: ./cart-service
+    container_name: cart-service
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - DB_HOST=postgres-cart
+      - REDIS_HOST=redis-cache
+      - RABBITMQ_HOST=rabbitmq
+      - EUREKA_HOST=discovery-service
+      - PRODUCT_SERVICE_URL=http://product-service:8081
+      - INVENTORY_SERVICE_URL=http://inventory-service:8084
+      - PRICING_SERVICE_URL=http://pricing-service:8090
+    depends_on:
+      - config-server
+      - discovery-service
+      - postgres-cart
+      - redis-cache
+    networks:
+      - ecommerce-net
 
-  notification:
+  order-service:
+    build: ./order-service
+    container_name: order-service
+    ports:
+      - "8083:8083"
+    environment:
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - DB_HOST=sqlserver-order
+      - REDIS_HOST=redis-cache
+      - RABBITMQ_HOST=rabbitmq
+      - EUREKA_HOST=discovery-service
+      - CUSTOMER_SERVICE_URL=http://customer-service:8085
+    depends_on:
+      - config-server
+      - discovery-service
+      - rabbitmq
+      - sqlserver-order:
+        condition: service_healthy
+    networks:
+      - ecommerce-net
+
+  inventory-service:
+    build: ./inventory-service
+    container_name: inventory-service
+    ports:
+      - "8084:8084"
+    environment:
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - DB_HOST=postgres-inventory
+      - REDIS_HOST=redis-cache
+      - RABBITMQ_HOST=rabbitmq
+      - EUREKA_HOST=discovery-service
+    depends_on:
+      - config-server
+      - discovery-service
+      - postgres-inventory
+      - rabbitmq
+    networks:
+      - ecommerce-net
+
+  customer-service:
+    build: ./customer-service
+    container_name: customer-service
+    ports:
+      - "8085:8085"
+    environment:
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - DB_HOST=postgres-customer
+      - REDIS_HOST=redis-cache
+      - RABBITMQ_HOST=rabbitmq
+      - EUREKA_HOST=discovery-service
+    depends_on:
+      - config-server
+      - discovery-service
+      - postgres-customer
+    networks:
+      - ecommerce-net
+
+  notification-service:
     build: ./notification-service
     container_name: notification-service
     ports:
       - "8089:8089"
     environment:
-      - SPRING_PROFILES_ACTIVE=docker
-      - SPRING_RABBITMQ_HOST=rabbitmq
-      - SPRING_DATA_REDIS_HOST=redis-cache
       - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+      - REDIS_HOST=redis-cache
+      - RABBITMQ_HOST=rabbitmq
+      - EUREKA_HOST=discovery-service
     depends_on:
+      - config-server
+      - discovery-service
       - rabbitmq
+      - redis-cache
+    networks:
+      - ecommerce-net
+
+  pricing-service:
+    build: ./pricing-service
+    container_name: pricing-service
+    ports:
+      - "8090:8090"
+    environment:
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - DB_HOST=postgres-pricing
+      - REDIS_HOST=redis-cache
+      - RABBITMQ_HOST=rabbitmq
+      - EUREKA_HOST=discovery-service
+      - PRODUCT_SERVICE_URL=http://product-service:8081
+    depends_on:
+      - config-server
+      - discovery-service
+      - postgres-pricing
+      - redis-cache
+    networks:
+      - ecommerce-net
+
+  shipping-service:
+    build: ./shipping-service
+    container_name: shipping-service
+    ports:
+      - "8091:8091"
+    environment:
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - DB_HOST=postgres-shipping
+      - REDIS_HOST=redis-cache
+      - RABBITMQ_HOST=rabbitmq
+      - EUREKA_HOST=discovery-service
+    depends_on:
+      - config-server
+      - discovery-service
+      - postgres-shipping
+      - rabbitmq
+    networks:
+      - ecommerce-net
+
+  payment-service:
+    build: ./payment-service
+    container_name: payment-service
+    ports:
+      - "8092:8092"
+    environment:
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - DB_HOST=postgres-payment
+      - REDIS_HOST=redis-cache
+      - RABBITMQ_HOST=rabbitmq
+      - EUREKA_HOST=discovery-service
+    depends_on:
+      - config-server
+      - discovery-service
+      - postgres-payment
+      - rabbitmq
+    networks:
+      - ecommerce-net
 
 volumes:
   redis-data:

@@ -13,7 +13,8 @@ import lombok.extern.slf4j.Slf4j;
 import pe.takiq.ecommerce.inventory_service.config.RabbitMQConfig;
 import pe.takiq.ecommerce.inventory_service.event.InventoryFailedEvent;
 import pe.takiq.ecommerce.inventory_service.event.OrderPaidEvent;
-import pe.takiq.ecommerce.inventory_service.event.OrderCancelledEvent; // Crear este DTO
+import pe.takiq.ecommerce.inventory_service.event.OrderCancelledEvent;
+import pe.takiq.ecommerce.inventory_service.exception.InsufficientStockException;
 import pe.takiq.ecommerce.inventory_service.service.InventoryService;
 
 @Component
@@ -39,9 +40,10 @@ public class InventoryEventListener {
 
         try {
             inventoryService.deductStock(event);
-        } catch (Exception ex) {
-            log.error("Fallo confirmando inventario en DB para orderId={}", event.getOrderId(), ex);
-            redisTemplate.delete(inboxKey);
+        } catch (InsufficientStockException ex) {
+            log.warn("SAGA REVERSAL: Stock insuficiente en BD para orderId={}. Iniciando reembolso...", event.getOrderId());
+            
+            inventoryService.releaseReservation(event.getOrderId());
 
             InventoryFailedEvent failedEvent = InventoryFailedEvent.builder()
                     .orderId(event.getOrderId())
@@ -54,6 +56,10 @@ public class InventoryEventListener {
                     RabbitMQConfig.INVENTORY_FAILED_ROUTING_KEY,
                     failedEvent
             );
+        } catch (Exception ex) {
+            log.error("Fallo de red o BD procesando inventario para orderId={}. Se reintentará.", event.getOrderId(), ex);
+            redisTemplate.delete(inboxKey);
+            throw ex;
         }
     }
 

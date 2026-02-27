@@ -48,7 +48,7 @@ resilience4j:
     instances:
       emailSender:
         maxAttempts: 3
-        waitDuration: 500ms
+        waitDuration: 2000ms
 
 notification:
     from: "Tu Tienda <no-reply@tutienda.pe>"

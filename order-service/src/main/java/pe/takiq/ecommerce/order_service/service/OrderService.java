@@ -1,14 +1,12 @@
 package pe.takiq.ecommerce.order_service.service;
 
+import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional; // Cambio a Transaccional de Spring
+import org.springframework.transaction.annotation.Transactional;
 
-import feign.FeignException;
-
-import pe.takiq.ecommerce.order_service.client.CustomerClient;
-import pe.takiq.ecommerce.order_service.client.InventoryClient;
+import pe.takiq.ecommerce.order_service.client.OrderIntegrationManager;
 import pe.takiq.ecommerce.order_service.dto.*;
 import pe.takiq.ecommerce.order_service.exception.BusinessException;
 import pe.takiq.ecommerce.order_service.model.Order;
@@ -28,8 +26,7 @@ import java.util.stream.Collectors;
 public class OrderService {
 
     private final OrderRepository repository;
-    private final CustomerClient customerClient;
-    private final InventoryClient inventoryClient;
+    private final OrderIntegrationManager integrationManager;
 
     @Transactional
     public OrderResponseDTO createPendingOrder(CreatePendingOrderRequest request) {
@@ -39,7 +36,7 @@ public class OrderService {
 
         GuestResponseDTO guest;
         try {
-            guest = customerClient.getGuestBySessionId(request.getSessionId());
+            guest = integrationManager.getGuest(request.getSessionId());
         } catch (Exception e) {
             log.error("Error al comunicar con Customer Service para sessionId: {}", request.getSessionId(), e);
             throw new BusinessException("No pudimos validar tu sesión de usuario. Por favor, intenta nuevamente.");
@@ -61,12 +58,12 @@ public class OrderService {
         reserveReq.setItems(reserveItems);
         
         try{
-            inventoryClient.reserveStock(reserveReq);
+            integrationManager.reserveStock(reserveReq);
         } catch (FeignException.BadRequest | FeignException.Conflict e) {
             throw new BusinessException("Stock insuficiente para uno o más productos. Por favor revisa tu carrito.");
         } catch (Exception e){
-            log.error("Fallo del servicio de inventario", e);
-            throw new BusinessException("No pudimos procesar el inventario en este momento. Intenta de nuevo más tarde.");
+            log.error("Fallo del servicio de inventario o Circuit Breaker abierto", e);
+            throw new BusinessException("No pudimos procesar el inventario temporalmente. Intenta de nuevo en unos minutos.");
         }
         
         Order order = new Order();

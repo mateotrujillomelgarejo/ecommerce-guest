@@ -1,28 +1,27 @@
-FROM openjdk:21-jdk-slim
+# ---------- BUILD ----------
 
-# Crear usuario no-root
-RUN addgroup --system spring && adduser --system --group spring
-USER spring:spring
+FROM maven:3.9.9-eclipse-temurin-17 AS build
 
-# Configurar directorio de trabajo
 WORKDIR /app
 
-# Copiar archivos Maven
-COPY --chown=spring:spring mvnw .
-COPY --chown=spring:spring .mvn .mvn
-COPY --chown=spring:spring pom.xml .
+COPY pom.xml .
 
-# Descargar dependencias (para caching)
-RUN ./mvnw dependency:go-offline -B
+RUN mvn -q -e -B dependency:resolve
 
-# Copiar código fuente
-COPY --chown=spring:spring src src
+COPY src ./src
 
-# Construir el JAR
-RUN ./mvnw clean package -DskipTests
+RUN mvn -q -DskipTests package
 
-# Puerto de exposición
-EXPOSE 8089
 
-# Comando de ejecución
-ENTRYPOINT ["java", "-jar", "target/notification-service-0.0.1-SNAPSHOT.jar"]
+
+# ---------- RUNTIME ----------
+
+FROM eclipse-temurin:21-jdk-alpine
+
+WORKDIR /app
+
+COPY --from=build /app/target/*.jar app.jar
+
+EXPOSE 8080
+
+ENTRYPOINT ["java","-jar","app.jar"]

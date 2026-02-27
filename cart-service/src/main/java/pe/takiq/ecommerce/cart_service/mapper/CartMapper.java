@@ -1,9 +1,7 @@
 package pe.takiq.ecommerce.cart_service.mapper;
 
 import java.util.List;
-
 import org.springframework.stereotype.Component;
-
 import pe.takiq.ecommerce.cart_service.dto.response.CartItemResponseDTO;
 import pe.takiq.ecommerce.cart_service.dto.response.CartResponseDTO;
 import pe.takiq.ecommerce.cart_service.model.Cart;
@@ -26,9 +24,12 @@ public class CartMapper {
         }).toList();
 
         dto.setItems(items);
-        dto.setTotal(
-                items.stream().mapToDouble(CartItemResponseDTO::getSubtotal).sum()
-        );
+        
+        dto.setSubtotal(cart.getSubtotal());
+        dto.setDiscount(cart.getDiscount());
+        dto.setTax(cart.getTax());
+        dto.setShippingEstimate(cart.getShippingEstimate());
+        dto.setTotal(cart.getTotal());
 
         return dto;
     }

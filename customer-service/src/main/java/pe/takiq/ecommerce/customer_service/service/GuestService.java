@@ -1,6 +1,5 @@
 package pe.takiq.ecommerce.customer_service.service;
 
-import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -24,18 +23,38 @@ public class GuestService {
     private boolean cacheEnabled;
 
     @Transactional
-    @Retry(name = "guestService")
     public GuestResponseDTO createGuest(GuestRequestDTO request) {
-        // Verificar si existe para no duplicar (y usar caché para optimizar lectura)
         if (cacheEnabled) {
             Optional<Guest> cached = cacheService.getGuestBySessionId(request.getSessionId());
             if (cached.isPresent()) return toResponse(cached.get());
         }
 
-        Optional<Guest> existing = repository.findBySessionId(request.getSessionId());
-        if (existing.isPresent()) {
-            if (cacheEnabled) cacheService.saveGuest(existing.get());
-            return toResponse(existing.get());
+        Optional<Guest> existingBySession = repository.findBySessionId(request.getSessionId());
+        if (existingBySession.isPresent()) {
+            Guest guest = existingBySession.get();
+            guest.setName(request.getName());
+            guest.setEmail(request.getEmail());
+            guest.setPhone(request.getPhone());
+            guest = repository.save(guest);
+            if (cacheEnabled) cacheService.saveGuest(guest);
+            return toResponse(guest);
+        }
+
+        if (request.getEmail() != null) {
+            Optional<Guest> existingByEmail = repository.findByEmail(request.getEmail());
+            if (existingByEmail.isPresent()) {
+                Guest returningGuest = existingByEmail.get();
+
+                if (cacheEnabled) cacheService.deleteGuest(returningGuest);
+                
+                returningGuest.setSessionId(request.getSessionId());
+                returningGuest.setName(request.getName());
+                returningGuest.setPhone(request.getPhone());
+                
+                returningGuest = repository.save(returningGuest);
+                if (cacheEnabled) cacheService.saveGuest(returningGuest);
+                return toResponse(returningGuest);
+            }
         }
 
         Guest guest = new Guest();
@@ -60,7 +79,7 @@ public class GuestService {
         }
 
         Guest guest = repository.findBySessionId(sessionId)
-                .orElseThrow(() -> new RuntimeException("Guest no encontrado por sessionId"));
+                .orElseThrow(() -> new RuntimeException("Guest no encontrado por sessionId: " + sessionId));
         
         if (cacheEnabled) cacheService.saveGuest(guest);
         return toResponse(guest);
@@ -73,7 +92,7 @@ public class GuestService {
         }
 
         Guest guest = repository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Guest no encontrado por email"));
+                .orElseThrow(() -> new RuntimeException("Guest no encontrado por email: " + email));
                 
         if (cacheEnabled) cacheService.saveGuest(guest);
         return toResponse(guest);

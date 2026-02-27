@@ -27,32 +27,29 @@ public class GuestCacheService {
     public Guest saveGuest(Guest guest) {
         Duration ttl = Duration.ofDays(ttlDays);
         
-        // Guardar por ID
         redisTemplate.opsForValue().set(ID_PREFIX + guest.getId(), guest, ttl);
         
-        // Guardar índice por SessionId
         if (guest.getSessionId() != null) {
-            redisTemplate.opsForValue().set(SESSION_PREFIX + guest.getSessionId(), guest, ttl);
+            redisTemplate.opsForValue().set(SESSION_PREFIX + guest.getSessionId(), guest.getId(), ttl);
         }
         
-        // Guardar índice por Email
         if (guest.getEmail() != null) {
-            redisTemplate.opsForValue().set(EMAIL_PREFIX + guest.getEmail(), guest, ttl);
+            redisTemplate.opsForValue().set(EMAIL_PREFIX + guest.getEmail(), guest.getId(), ttl);
         }
         
         return guest;
     }
 
     public Optional<Guest> getGuestById(String guestId) {
-        return getFromCache(ID_PREFIX + guestId);
+        return getFullGuest(ID_PREFIX + guestId);
     }
 
     public Optional<Guest> getGuestBySessionId(String sessionId) {
-        return getFromCache(SESSION_PREFIX + sessionId);
+        return getGuestIdByReference(SESSION_PREFIX + sessionId).flatMap(this::getGuestById);
     }
 
     public Optional<Guest> getGuestByEmail(String email) {
-        return getFromCache(EMAIL_PREFIX + email);
+        return getGuestIdByReference(EMAIL_PREFIX + email).flatMap(this::getGuestById);
     }
 
     public void deleteGuest(Guest guest) {
@@ -61,11 +58,17 @@ public class GuestCacheService {
         if (guest.getEmail() != null) redisTemplate.delete(EMAIL_PREFIX + guest.getEmail());
     }
 
-    private Optional<Guest> getFromCache(String key) {
+
+    private Optional<String> getGuestIdByReference(String referenceKey) {
+        Object idObj = redisTemplate.opsForValue().get(referenceKey);
+        if (idObj == null) return Optional.empty();
+        return Optional.of(idObj.toString());
+    }
+
+    private Optional<Guest> getFullGuest(String key) {
         Object obj = redisTemplate.opsForValue().get(key);
         if (obj == null) return Optional.empty();
         
-        // Optimización: si ya es del tipo Guest, lo casteamos, si no, usamos objectMapper (por seguridad con Maps de Jackson)
         if (obj instanceof Guest) {
             return Optional.of((Guest) obj);
         }

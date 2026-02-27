@@ -5,8 +5,6 @@ import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.CachePut;
 import org.springframework.cache.annotation.Cacheable;
@@ -24,6 +22,8 @@ import pe.takiq.ecommerce.product_service.repository.ProductRepository;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 @Service
 @RequiredArgsConstructor
@@ -33,11 +33,7 @@ public class ProductService {
     private final InventoryClient inventoryClient;
     private final RabbitTemplate rabbitTemplate;
 
-    @Autowired
-    @Lazy
-    private ProductService self;
-
-    @Cacheable(value = "productsContent", key = "#pageable")
+    @Cacheable(value = "productsContent", key = "#pageable.pageNumber + '-' + #pageable.pageSize")
     public List<Product> findAllContent(Pageable pageable) {
         return repository.findAll(pageable).getContent();
     }
@@ -58,10 +54,34 @@ public class ProductService {
         return repository.findById(id).orElseThrow(() -> new RuntimeException("Producto no encontrado"));
     }
 
+    @Cacheable(value = "productsByName", key = "#name")
+    public List<Product> searchByName(String name) {
+        return repository.findByNameContainingIgnoreCase(name);
+    }
+
+    @Cacheable(value = "productsByCategory", key = "#category + '-' + #pageable.pageNumber")
+    public Page<Product> filterByCategory(String category, Pageable pageable) {
+        return repository.findByCategory(category, pageable);
+    }
+
+    @Cacheable(value = "productsByPrice", key = "#min + '-' + #max + '-' + #pageable.pageNumber")
+    public Page<Product> filterByPrice(Double min, Double max, Pageable pageable) {
+        return repository.findByPriceBetween(min, max, pageable);
+    }
+
+    @Cacheable(value = "popularProducts", key = "#pageable.pageNumber")
+    public Page<Product> getPopular(Pageable pageable) {
+        return repository.findAllByOrderByAverageRatingDesc(pageable);
+    }
+
+
     @Caching(
         evict = { 
-            @CacheEvict(value = "products", allEntries = true),
+            @CacheEvict(value = "productsContent", allEntries = true),
+            @CacheEvict(value = "productsTotal", allEntries = true),
+            @CacheEvict(value = "productsByName", allEntries = true),
             @CacheEvict(value = "productsByCategory", allEntries = true),
+            @CacheEvict(value = "productsByPrice", allEntries = true),
             @CacheEvict(value = "popularProducts", allEntries = true)
         },
         put = { @CachePut(value = "productById", key = "#result.id") }
@@ -81,28 +101,13 @@ public class ProductService {
         return saved;
     }
 
-    public List<Product> searchByName(String name) {
-        return repository.findByNameContainingIgnoreCase(name);
-    }
-
-    @Cacheable(value = "productsByCategory", key = "#category + '-' + #pageable.pageNumber")
-    public Page<Product> filterByCategory(String category, Pageable pageable) {
-        return repository.findByCategory(category, pageable);
-    }
-
-    public Page<Product> filterByPrice(Double min, Double max, Pageable pageable) {
-        return repository.findByPriceBetween(min, max, pageable);
-    }
-
-    @Cacheable(value = "popularProducts", key = "#pageable.pageNumber")
-    public Page<Product> getPopular(Pageable pageable) {
-        return repository.findAllByOrderByAverageRatingDesc(pageable);
-    }
 
     @CircuitBreaker(name = "inventoryClient", fallbackMethod = "detailFallback")
     @Retry(name = "inventoryClient")
     public ProductDetailDTO getDetails(String id, Integer quantity) {
-        Product product = self.findById(id); 
+
+        Product product = repository.findById(id).orElseThrow(() -> new RuntimeException("Producto no encontrado")); 
+        
         Boolean available = inventoryClient.checkStock(id, quantity == null ? 1 : quantity);
 
         ProductDetailDTO dto = new ProductDetailDTO();
@@ -114,7 +119,7 @@ public class ProductService {
 
     public ProductDetailDTO detailFallback(String id, Integer quantity, Throwable ex) {
         ProductDetailDTO dto = new ProductDetailDTO();
-        dto.setProduct(self.findById(id));
+        dto.setProduct(repository.findById(id).orElse(null)); // FIX: Directo al repo
         dto.setAvailable(false);
         dto.setStockMessage("Inventario no disponible temporalmente");
         return dto;
@@ -123,11 +128,11 @@ public class ProductService {
     public List<ProductPriceDTO> getBulkPrices(List<String> productIds) {
         Iterable<Product> products = repository.findAllById(productIds);
         
-        List<ProductPriceDTO> results = new java.util.ArrayList<>();
-        for (Product p : products) {
-            BigDecimal price = p.getPrice() != null ? BigDecimal.valueOf(p.getPrice()) : BigDecimal.ZERO;
-            results.add(new ProductPriceDTO(p.getId(), price));
-        }
-        return results;
+        return StreamSupport.stream(products.spliterator(), false)
+                .map(p -> new ProductPriceDTO(
+                        p.getId(), 
+                        p.getPrice() != null ? BigDecimal.valueOf(p.getPrice()) : BigDecimal.ZERO
+                ))
+                .collect(Collectors.toList());
     }
 }

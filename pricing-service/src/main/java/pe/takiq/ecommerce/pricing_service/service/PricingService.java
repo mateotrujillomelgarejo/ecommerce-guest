@@ -1,11 +1,12 @@
 package pe.takiq.ecommerce.pricing_service.service;
 
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
-import pe.takiq.ecommerce.pricing_service.client.ProductClient;
+import pe.takiq.ecommerce.pricing_service.client.ProductPriceFetcher;
 import pe.takiq.ecommerce.pricing_service.dto.*;
 import pe.takiq.ecommerce.pricing_service.dto.PriceCalculationRequest.CartItem;
 import pe.takiq.ecommerce.pricing_service.dto.PriceCalculationResponse.ItemPrice;
@@ -27,16 +28,15 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class PricingService {
 
-    private final ProductClient productClient;
+    private final ProductPriceFetcher productPriceFetcher; // NUEVO: Extraído para que el Circuit Breaker funcione
     private final CouponRepository couponRepository;
     private final PromotionRepository promotionRepository;
-
     private final RedisTemplate<String, Object> redisTemplate;
+
     private static final String REDIS_HASH_KEY = "materialized_prices";
     private static final BigDecimal DEFAULT_TAX_RATE = new BigDecimal("0.18");
     private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
 
-    // 🔥 FIX: Eliminado @Cacheable para evitar precios desactualizados
     public PriceCalculationResponse calculatePrice(PriceCalculationRequest request) {
         validateRequest(request);
 
@@ -73,12 +73,10 @@ public class PricingService {
         BigDecimal couponDiscount = ZERO;
         
         if (request.getCouponCode() != null && !request.getCouponCode().isBlank()) {
-            Optional<Coupon> couponOpt = couponRepository.findByCodeAndActiveTrue(request.getCouponCode());
+            Optional<Coupon> couponOpt = getActiveCoupon(request.getCouponCode()); // OPTIMIZADO: Usa Caché
             
             if (couponOpt.isPresent()) {
                 Coupon coupon = couponOpt.get();
-                
-                // 🔥 FIX: Verificamos límite de uso, pero NO incrementamos el uso en base de datos aquí.
                 boolean isUsageValid = coupon.getMaxUses() == null || coupon.getUsesCount() < coupon.getMaxUses();
                 
                 if (isUsageValid) {
@@ -89,7 +87,6 @@ public class PricingService {
                     }
                     totalDiscount = totalDiscount.add(couponDiscount);
                     appliedCoupon = coupon.getCode();
-                    // SE ELIMINÓ: couponRepository.incrementUses()
                 } else {
                     log.warn("Cupón {} alcanzó su límite máximo de usos.", coupon.getCode());
                 }
@@ -118,6 +115,7 @@ public class PricingService {
         Map<String, BigDecimal> prices = new java.util.HashMap<>();
         List<String> missingInRedis = new java.util.ArrayList<>();
 
+        // 1. Buscamos en la vista materializada de Redis
         for (String id : productIds) {
             Object cachedPrice = redisTemplate.opsForHash().get(REDIS_HASH_KEY, id);
             if (cachedPrice != null) {
@@ -127,9 +125,9 @@ public class PricingService {
             }
         }
 
+        // 2. Solo los que faltan van al Product-Service (vía el nuevo Fetcher resiliente)
         if (!missingInRedis.isEmpty()) {
-            // 🔥 FIX: Llamada delegada al método protegido por CircuitBreaker
-            List<ProductPriceDTO> fallbackPrices = fetchPricesConResiliencia(missingInRedis);
+            List<ProductPriceDTO> fallbackPrices = productPriceFetcher.fetchPricesConResiliencia(missingInRedis);
             for (ProductPriceDTO dto : fallbackPrices) {
                 prices.put(dto.getId(), dto.getPrice());
                 redisTemplate.opsForHash().put(REDIS_HASH_KEY, dto.getId(), dto.getPrice().toString());
@@ -138,26 +136,29 @@ public class PricingService {
         return prices;
     }
 
-    // 🔥 FIX: Circuit Breaker implementado correctamente en código
-    @CircuitBreaker(name = "productClient", fallbackMethod = "fetchPricesFallback")
-    public List<ProductPriceDTO> fetchPricesConResiliencia(List<String> productIds) {
-        return productClient.getBulkPrices(productIds);
-    }
-
-    public List<ProductPriceDTO> fetchPricesFallback(List<String> productIds, Throwable ex) {
-        log.error("Product Service inalcanzable. Usando precio 0.0 temporalmente. Causa: {}", ex.getMessage());
-        return productIds.stream()
-                .map(id -> new ProductPriceDTO(id, BigDecimal.ZERO))
-                .collect(Collectors.toList());
-    }
-
     private BigDecimal applyProductPromotions(BigDecimal basePrice, String productId) {
         BigDecimal price = basePrice;
-        List<Promotion> promos = promotionRepository.findByProductIdAndActiveTrue(productId);
+        List<Promotion> promos = getActivePromotions(productId); // OPTIMIZADO: Usa Caché
         for (Promotion promo : promos) {
             price = price.multiply(BigDecimal.ONE.subtract(promo.getDiscountPercent()));
         }
         return price.setScale(2, RoundingMode.HALF_UP);
+    }
+
+
+    @Cacheable(value = "promotions", key = "#productId")
+    public List<Promotion> getActivePromotions(String productId) {
+        return promotionRepository.findByProductIdAndActiveTrue(productId);
+    }
+
+    @Cacheable(value = "coupons", key = "#code")
+    public Optional<Coupon> getActiveCoupon(String code) {
+        return couponRepository.findByCodeAndActiveTrue(code);
+    }
+
+    @CacheEvict(value = {"promotions", "coupons"}, allEntries = true)
+    public void invalidateCaches() {
+        log.info("Reglas de precios (cupones/promociones) han sido modificadas. Cachés invalidadas.");
     }
 
     private BigDecimal calculateShippingPlaceholder(BigDecimal subtotal) {
@@ -170,10 +171,5 @@ public class PricingService {
         if (request.getItems() == null || request.getItems().isEmpty()) {
             throw new IllegalArgumentException("El carrito debe tener al menos un producto");
         }
-    }
-
-    // Se mantiene el método, pero solo loguea porque ya no usamos @Cacheable en Spring para el cotizador
-    public void invalidateCaches() {
-        log.info("Reglas de precios (cupones/promociones) actualizadas.");
     }
 }

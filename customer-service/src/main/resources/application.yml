@@ -9,35 +9,23 @@ spring:
     import: optional:configserver:http://localhost:8888
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/customer_db
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:5432/customer_db
     username: customer_user
     password: CustomerPass123!
     driver-class-name: org.postgresql.Driver
 
-  rabbitmq:
-    host: localhost
-    port: 5672
-    username: guest
-    password: guest
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
 
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: false
 
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:default}
-
-resilience4j:
-  retry:
-    instances:
-      guestService:
-        maxAttempts: 3
-        waitDuration: 2s
-        retryExceptions:
-          - org.springframework.dao.DataAccessException
-          - java.util.concurrent.TimeoutException
-          - org.springframework.data.redis.RedisConnectionFailureException
 
 management:
   endpoints:

@@ -14,17 +14,16 @@ import pe.takiq.ecommerce.shipping_service.service.ShippingService;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class OrderCreatedListener {
+public class OrderPaidListener {
 
     private final ShippingService shippingService;
-    // 🔥 1. Inyectamos Redis para la Idempotencia atómica
     private final StringRedisTemplate redisTemplate; 
 
-    @RabbitListener(queues = RabbitMQConfig.ORDER_CREATED_QUEUE)
+    @RabbitListener(queues = RabbitMQConfig.ORDER_PAID_QUEUE)
     public void onOrderPaid(OrderPaidEvent event) {
         String orderId = event.getOrderId();
         
-        // 🔥 2. Bloqueo Atómico con Redis (Inbox Pattern)
+        // Bloqueo Atómico con Redis (Inbox Pattern)
         String inboxKey = "inbox:shipping:order_paid:" + orderId;
         Boolean isFirstTime = redisTemplate.opsForValue().setIfAbsent(inboxKey, "PROCESSED", Duration.ofDays(7));
         
@@ -33,10 +32,9 @@ public class OrderCreatedListener {
             return;
         }
 
-        log.info("OrderPaid recibido → procesando shipping para orderId={}", orderId);
+        log.info("OrderPaid recibido → procesando envío para orderId={}", orderId);
 
         try {
-            // Mantienes tu doble validación por seguridad
             if (shippingService.existsShipment(orderId)) {
                 log.info("Shipment ya existe en BD para {}, ignorando", orderId);
                 return;
@@ -45,9 +43,9 @@ public class OrderCreatedListener {
             shippingService.createAndShip(event);
             
         } catch (Exception e) {
-            // 🔥 3. Si falla, borramos la llave de Redis para permitir que RabbitMQ reintente (Retry/DLQ)
+            // Si falla, borramos la llave de Redis para permitir que RabbitMQ reintente
             redisTemplate.delete(inboxKey);
-            log.error("Error creando shipment para orderId={}", orderId, e);
+            log.error("Error creando shipment para orderId={}. Se reintentará.", orderId, e);
             throw e; 
         }
     }

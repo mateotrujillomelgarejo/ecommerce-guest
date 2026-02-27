@@ -19,10 +19,10 @@ public class RabbitMQConfig {
 
     public static final String ORDER_EVENTS_EXCHANGE = "ecommerce.events";
 
-    public static final String ORDER_CREATED_QUEUE = "shipping.order-created.queue";
-    public static final String ORDER_CREATED_DLQ   = "shipping.order-created.dlq";
+    public static final String ORDER_PAID_QUEUE = "shipping.order-paid.queue";
+    public static final String ORDER_PAID_DLQ   = "shipping.order-paid.dlq";
 
-    public static final String ROUTING_KEY_CREATED = "order.paid";
+    public static final String ROUTING_KEY_PAID = "order.paid";
     public static final String ROUTING_KEY_SHIPPED = "order.shipped";
 
     @Bean
@@ -31,51 +31,49 @@ public class RabbitMQConfig {
     }
 
     @Bean
-    public Queue orderCreatedQueue() {
-        return QueueBuilder.durable(ORDER_CREATED_QUEUE)
+    public Queue orderPaidQueue() {
+        return QueueBuilder.durable(ORDER_PAID_QUEUE)
                 .withArgument("x-dead-letter-exchange", ORDER_EVENTS_EXCHANGE)
-                .withArgument("x-dead-letter-routing-key", "dlq.shipping.created")
+                .withArgument("x-dead-letter-routing-key", "dlq.shipping.paid")
                 .build();
     }
 
     @Bean
-    public Queue orderCreatedDlq() {
-        return QueueBuilder.durable(ORDER_CREATED_DLQ).build();
+    public Queue orderPaidDlq() {
+        return QueueBuilder.durable(ORDER_PAID_DLQ).build();
     }
 
-@Bean
-public Binding createdBinding(
-        @Qualifier("orderCreatedQueue") Queue orderCreatedQueue,
-        TopicExchange exchange
-) {
-    return BindingBuilder.bind(orderCreatedQueue)
-            .to(exchange)
-            .with(ROUTING_KEY_CREATED);
-}
+    @Bean
+    public Binding paidBinding(
+            @Qualifier("orderPaidQueue") Queue orderPaidQueue,
+            TopicExchange exchange
+    ) {
+        return BindingBuilder.bind(orderPaidQueue)
+                .to(exchange)
+                .with(ROUTING_KEY_PAID);
+    }
 
-@Bean
-public Binding dlqBinding(
-        @Qualifier("orderCreatedDlq") Queue orderCreatedDlq,
-        TopicExchange exchange
-) {
-    return BindingBuilder.bind(orderCreatedDlq)
-            .to(exchange)
-            .with("dlq.shipping.created");
-}
+    @Bean
+    public Binding dlqBinding(
+            @Qualifier("orderPaidDlq") Queue orderPaidDlq,
+            TopicExchange exchange
+    ) {
+        return BindingBuilder.bind(orderPaidDlq)
+                .to(exchange)
+                .with("dlq.shipping.paid");
+    }
 
+    @Bean
+    public Jackson2JsonMessageConverter jsonMessageConverter() {
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
+        objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        objectMapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES); 
 
-@Bean
-public Jackson2JsonMessageConverter jsonMessageConverter() {
-    ObjectMapper objectMapper = new ObjectMapper();
-    objectMapper.registerModule(new JavaTimeModule()); // Soporte para LocalDateTime
-    objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS); // Formato ISO-8601 (String)
-
-    objectMapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES); 
-
-    Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter(objectMapper);
-    converter.setTypePrecedence(Jackson2JavaTypeMapper.TypePrecedence.INFERRED);
-    return converter;
-}
+        Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter(objectMapper);
+        converter.setTypePrecedence(Jackson2JavaTypeMapper.TypePrecedence.INFERRED);
+        return converter;
+    }
 
     @Bean
     public RabbitTemplate rabbitTemplate(

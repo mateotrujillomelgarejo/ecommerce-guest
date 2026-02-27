@@ -23,17 +23,13 @@ public class InventoryService {
 
     private final InventoryRepository repository;
     private final RedisTemplate<String, Object> redisTemplate;
-    
-    @Qualifier("releaseStockScript")
     private final DefaultRedisScript<String> reserveStockScript;
-
-    @Qualifier("releaseStockScript")
     private final DefaultRedisScript<String> releaseStockScript;
 
     public InventoryService(
             InventoryRepository repository,
             RedisTemplate<String, Object> redisTemplate,
-            @Qualifier("reserveStockScript") DefaultRedisScript<String> reserveStockScript,
+            @Qualifier("reserveStockScript") DefaultRedisScript<String> reserveStockScript, // FIX CRÍTICO: Qualifier corregido
             @Qualifier("releaseStockScript") DefaultRedisScript<String> releaseStockScript
     ) {
         this.repository = repository;
@@ -88,6 +84,7 @@ public class InventoryService {
                 throw new InsufficientStockException("No se pudo confirmar el stock físico para " + item.getProductId());
             }
         }
+        // Si todo va bien, borramos la reserva temporal porque el stock físico ya se redujo.
         redisTemplate.delete("reserve:" + event.getOrderId());
         log.info("Stock confirmado permanentemente en DB para orderId={}", event.getOrderId());
     }
@@ -97,7 +94,7 @@ public class InventoryService {
         if ("OK".equals(result)) {
             log.info("Stock temporal liberado/restaurado en Redis para orderId={}", orderId);
         } else {
-            log.warn("No se encontró reserva para liberar en Redis para orderId={}", orderId);
+            log.warn("No se encontró reserva temporal para liberar en Redis para orderId={}", orderId);
         }
     }
 

@@ -6,11 +6,11 @@ spring:
     name: product-service
 
   config:
-    import: optional:configserver:http://localhost:8888
+    import: ${SPRING_CONFIG_IMPORT:optional:configserver:http://localhost:8888}
 
   data:
     mongodb:
-      uri: mongodb://product_user:Product123@localhost:27017/ecommerce_product?authSource=ecommerce_product
+      uri: mongodb://product_user:Product123@${DB_HOST:localhost}:27017/ecommerce_product?authSource=admin
       auto-index-creation: true
 
   cache:
@@ -30,7 +30,7 @@ spring:
 
 
   rabbitmq:
-    host: localhost
+    host: ${RABBITMQ_HOST:localhost}
     port: 5672
     username: guest
     password: guest
@@ -41,7 +41,7 @@ eureka:
     register-with-eureka: true
     fetch-registry: true
     service-url:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: http://${EUREKA_HOST:localhost}:8761/eureka/
   instance:
     prefer-ip-address: true
     lease-renewal-interval-in-seconds: 10
@@ -68,4 +68,4 @@ management:
         include: health,info,metrics,prometheus
 
 inventory-service:
-  url: http://localhost:8084
+  url: ${INVENTORY_SERVICE_URL:http://localhost:8084}

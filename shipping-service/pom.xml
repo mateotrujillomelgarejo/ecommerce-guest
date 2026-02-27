@@ -6,7 +6,6 @@
     <groupId>pe.takiq.ecommerce</groupId>
     <artifactId>shipping-service</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-
     <name>Shipping Service</name>
     <packaging>jar</packaging>
 
@@ -47,7 +46,6 @@
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
         </dependency>
-        <!-- Distributed Tracing para ver el flujo en los logs -->
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-tracing-bridge-brave</artifactId>
@@ -95,7 +93,10 @@
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
         </dependency>
-
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-config</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.wiremock</groupId>
             <artifactId>wiremock-standalone</artifactId>
@@ -128,6 +129,23 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <version>${spring-boot.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
+                </configuration>
             </plugin>
         </plugins>
     </build>

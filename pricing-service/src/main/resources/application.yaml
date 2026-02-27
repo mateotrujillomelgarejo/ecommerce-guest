@@ -7,7 +7,7 @@ spring:
     name: pricing-service
 
   config:
-    import: optional:configserver:http://localhost:8888
+    import: ${SPRING_CONFIG_IMPORT:optional:configserver:http://localhost:8888}
 
   datasource:
     url: jdbc:postgresql://localhost:5432/pricing_db

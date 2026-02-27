@@ -6,7 +6,7 @@ spring:
     name: order-service
 
   config:
-    import: optional:configserver:http://localhost:8888
+    import: ${SPRING_CONFIG_IMPORT:optional:configserver:http://localhost:8888}
 
   data:
     redis:

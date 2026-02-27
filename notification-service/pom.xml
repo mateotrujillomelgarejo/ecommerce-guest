@@ -67,7 +67,6 @@
             <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
 
-        <!-- FIX: Agregamos Resilience4j y quitamos Spring Retry -->
         <dependency>
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-spring-boot3</artifactId>
@@ -111,6 +110,7 @@
                     </execution>
                 </executions>
             </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

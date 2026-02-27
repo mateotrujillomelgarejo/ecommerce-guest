@@ -6,7 +6,7 @@ spring:
     name: customer-service
 
   config:
-    import: optional:configserver:http://localhost:8888
+    import: ${SPRING_CONFIG_IMPORT:optional:configserver:http://localhost:8888}
 
   datasource:
     url: jdbc:postgresql://${POSTGRES_HOST:localhost}:5432/customer_db

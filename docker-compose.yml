@@ -92,19 +92,6 @@ services:
     networks:
       - ecommerce-net
 
-  postgres-cart:
-    image: postgres:16
-    container_name: postgres-cart
-    restart: always
-    environment:
-      POSTGRES_DB: ecommerce_cart
-      POSTGRES_USER: ecommerce_cart_user
-      POSTGRES_PASSWORD: CartPass123!
-    ports:
-      - "5435:5432"
-    networks:
-      - ecommerce-net
-
   postgres-inventory:
     image: postgres:16
     container_name: postgres-inventory
@@ -219,7 +206,6 @@ services:
       - "8082:8082"
     environment:
       - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
-      - DB_HOST=postgres-cart
       - REDIS_HOST=redis-cache
       - RABBITMQ_HOST=rabbitmq
       - EUREKA_HOST=discovery-service
@@ -247,10 +233,13 @@ services:
       - EUREKA_HOST=discovery-service
       - CUSTOMER_SERVICE_URL=http://customer-service:8085
     depends_on:
-      - config-server
-      - discovery-service
-      - rabbitmq
-      - sqlserver-order:
+      config-server:
+        condition: service_started
+      discovery-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+      sqlserver-order:
         condition: service_healthy
     networks:
       - ecommerce-net

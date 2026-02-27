@@ -38,18 +38,15 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- Distributed Tracing para ver el flujo en los logs -->
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-tracing-bridge-brave</artifactId>
         </dependency>
-        <!-- Redis para LUA y Caché -->
 <dependency>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-data-redis</artifactId>
 </dependency>
 
-<!-- Observabilidad -->
 <dependency>
     <groupId>io.micrometer</groupId>
     <artifactId>micrometer-registry-prometheus</artifactId>

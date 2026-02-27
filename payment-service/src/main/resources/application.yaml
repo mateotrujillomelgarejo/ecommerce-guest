@@ -11,7 +11,7 @@ spring:
       port: 6379
 
   config:
-    import: optional:configserver:http://localhost:8888
+    import: ${SPRING_CONFIG_IMPORT:optional:configserver:http://localhost:8888}
 
   datasource:
     url: jdbc:postgresql://localhost:5432/payment_db

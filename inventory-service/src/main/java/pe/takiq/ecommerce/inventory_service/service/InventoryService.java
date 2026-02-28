@@ -105,4 +105,8 @@ public class InventoryService {
         repository.save(inv);
         redisTemplate.opsForValue().set(STOCK_PREFIX + productId, String.valueOf(Math.max(0, quantity)));
     }
+
+    public List<Inventory> getAllInventory() {
+        return repository.findAll();
+    }
 }

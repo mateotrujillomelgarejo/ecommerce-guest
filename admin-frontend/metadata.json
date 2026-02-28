@@ -1,0 +1,5 @@
+{
+  "name": "E-Commerce Admin Panel",
+  "description": "Admin dashboard for managing products, inventory, orders, and coupons.",
+  "requestFramePermissions": []
+}

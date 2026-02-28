@@ -50,4 +50,10 @@ public class InventoryController {
         service.updateStock(productId, quantity);
         return ResponseEntity.ok().build();
     }
+
+
+    @GetMapping("/all")
+    public ResponseEntity<java.util.List<Inventory>> getAllInventory() {
+        return ResponseEntity.ok(service.getAllInventory());
+    }
 }

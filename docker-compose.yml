@@ -530,13 +530,22 @@ services:
     build: ./frontend
     container_name: frontend-app
     ports:
-      - "3000:4000"
+      - "4200:4000"
     depends_on:
       api-gateway:
         condition: service_started
     networks:
       - ecommerce-net
 
+  admin-frontend:
+    build: ./admin-frontend
+    container_name: admin-frontend
+    ports:
+      - "3001:80"
+    depends_on:
+      - api-gateway
+    networks:
+      - ecommerce-net
 
 volumes:
   redis-data:

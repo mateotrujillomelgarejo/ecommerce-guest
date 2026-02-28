@@ -119,7 +119,7 @@ public class ProductService {
 
     public ProductDetailDTO detailFallback(String id, Integer quantity, Throwable ex) {
         ProductDetailDTO dto = new ProductDetailDTO();
-        dto.setProduct(repository.findById(id).orElse(null)); // FIX: Directo al repo
+        dto.setProduct(repository.findById(id).orElse(null));
         dto.setAvailable(false);
         dto.setStockMessage("Inventario no disponible temporalmente");
         return dto;
@@ -134,5 +134,43 @@ public class ProductService {
                         p.getPrice() != null ? BigDecimal.valueOf(p.getPrice()) : BigDecimal.ZERO
                 ))
                 .collect(Collectors.toList());
+    }
+
+
+    @Caching(
+        evict = { 
+            @CacheEvict(value = "productsContent", allEntries = true),
+            @CacheEvict(value = "productsTotal", allEntries = true),
+            @CacheEvict(value = "productsByName", allEntries = true),
+            @CacheEvict(value = "productsByCategory", allEntries = true),
+            @CacheEvict(value = "productsByPrice", allEntries = true),
+            @CacheEvict(value = "popularProducts", allEntries = true)
+        },
+        put = { @CachePut(value = "productById", key = "#id") }
+    )
+    public Product update(String id, Product updatedProduct) {
+        Product existing = findById(id);
+        existing.setName(updatedProduct.getName());
+        existing.setDescription(updatedProduct.getDescription());
+        existing.setPrice(updatedProduct.getPrice());
+        existing.setCategory(updatedProduct.getCategory());
+        existing.setImages(updatedProduct.getImages());
+        existing.setTags(updatedProduct.getTags());
+        existing.setActive(updatedProduct.isActive());
+        return save(existing);
+    }
+
+    @Caching(
+        evict = { 
+            @CacheEvict(value = "productsContent", allEntries = true),
+            @CacheEvict(value = "productsTotal", allEntries = true),
+            @CacheEvict(value = "popularProducts", allEntries = true)
+        },
+        put = { @CachePut(value = "productById", key = "#id") }
+    )
+    public void softDelete(String id) {
+        Product existing = findById(id);
+        existing.setActive(false);
+        save(existing);
     }
 }

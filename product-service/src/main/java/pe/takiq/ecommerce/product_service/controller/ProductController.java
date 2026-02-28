@@ -88,4 +88,15 @@ public Page<Product> getAll(
     public List<ProductPriceDTO> getBulkPrices(@RequestBody List<String> productIds) {
         return service.getBulkPrices(productIds);
     }
+
+
+    @PutMapping("/{id}")
+    public Product updateProduct(@PathVariable String id, @RequestBody Product product) {
+        return service.update(id, product);
+    }
+
+    @DeleteMapping("/{id}")
+    public void deleteProduct(@PathVariable String id) {
+        service.softDelete(id);
+    }
 }

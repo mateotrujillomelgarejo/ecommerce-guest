@@ -144,4 +144,12 @@ public class OrderService {
         }
         return dto;
     }
+
+
+    public List<OrderResponseDTO> getAllOrdersForAdmin() {
+        return repository.findAll().stream()
+                .sorted((o1, o2) -> o2.getCreatedAt().compareTo(o1.getCreatedAt()))
+                .map(this::mapToDTO)
+                .collect(Collectors.toList());
+    }
 }

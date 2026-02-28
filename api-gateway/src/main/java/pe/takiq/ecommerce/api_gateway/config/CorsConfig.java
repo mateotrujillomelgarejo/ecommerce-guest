@@ -13,7 +13,8 @@ public class CorsConfig {
     public CorsWebFilter corsWebFilter() {
         CorsConfiguration config = new CorsConfiguration();
 
-        config.addAllowedOrigin("http://localhost:3000");     // React/Vite/Angular common
+        config.addAllowedOrigin("http://localhost:3000");
+        config.addAllowedOrigin("http://localhost:3001");      // React/Vite/Angular common
         config.addAllowedOrigin("http://localhost:4200");     // Angular CLI
         config.addAllowedOrigin("http://localhost:5173");     // Vite default
         config.addAllowedOrigin("http://localhost:8080");     // Si pruebas directo en gateway

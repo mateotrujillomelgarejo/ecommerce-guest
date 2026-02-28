@@ -7,45 +7,7 @@ networks:
 services:
 
   # ==========================================
-  # 1. INFRAESTRUCTURA CORE (Discovery & Config)
-  # ==========================================
-
-  config-server:
-    build: ./config-server
-    container_name: config-server
-    ports:
-      - "8888:8888"
-    networks:
-      - ecommerce-net
-
-  discovery-service:
-    build: ./discovery-service
-    container_name: discovery-service
-    ports:
-      - "8761:8761"
-    environment:
-      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
-    depends_on:
-      - config-server
-    networks:
-      - ecommerce-net
-
-  api-gateway:
-    build: ./api-gateway
-    container_name: api-gateway
-    ports:
-      - "8080:8080"
-    environment:
-      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
-      - EUREKA_HOST=discovery-service
-    depends_on:
-      - config-server
-      - discovery-service
-    networks:
-      - ecommerce-net
-
-  # ==========================================
-  # 2. BROKERS Y CACHÉ
+  # 1. BROKERS Y CACHÉ (Inician Primero)
   # ==========================================
 
   rabbitmq:
@@ -70,13 +32,18 @@ services:
     ports:
       - "6379:6379"
     command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - ecommerce-net
     volumes:
       - redis-data:/data
 
   # ==========================================
-  # 3. BASES DE DATOS
+  # 2. BASES DE DATOS (Inician Primero)
   # ==========================================
 
   mongo-product:
@@ -89,6 +56,11 @@ services:
       MONGO_INITDB_DATABASE: ecommerce_product
     ports:
       - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - ecommerce-net
 
@@ -102,6 +74,11 @@ services:
       POSTGRES_PASSWORD: InventoryPass123!
     ports:
       - "5436:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inventory_user -d inventory_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - ecommerce-net
 
@@ -133,6 +110,11 @@ services:
       POSTGRES_PASSWORD: CustomerPass123!
     ports:
       - "5437:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U customer_user -d customer_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - ecommerce-net
 
@@ -146,6 +128,11 @@ services:
       POSTGRES_PASSWORD: PricingPass123!
     ports:
       - "5438:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pricing_user -d pricing_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - ecommerce-net
 
@@ -159,6 +146,11 @@ services:
       POSTGRES_PASSWORD: PaymentPass123!
     ports:
       - "5439:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payment_user -d payment_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - ecommerce-net
 
@@ -172,6 +164,48 @@ services:
       POSTGRES_PASSWORD: ShippingPass123!
     ports:
       - "5440:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shipping_user -d shipping_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ecommerce-net
+
+  # ==========================================
+  # 3. INFRAESTRUCTURA CORE (Config, luego Discovery)
+  # ==========================================
+
+  config-server:
+    build: ./config-server
+    container_name: config-server
+    ports:
+      - "8888:8888"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8888/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - ecommerce-net
+
+  discovery-service:
+    build: ./discovery-service
+    container_name: discovery-service
+    ports:
+      - "8761:8761"
+    environment:
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8761/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    depends_on:
+      config-server:
+        condition: service_healthy
     networks:
       - ecommerce-net
 
@@ -190,11 +224,23 @@ services:
       - REDIS_HOST=redis-cache
       - RABBITMQ_HOST=rabbitmq
       - EUREKA_HOST=discovery-service
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
     depends_on:
-      - config-server
-      - discovery-service
-      - mongo-product
-      - rabbitmq
+      config-server:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+      mongo-product:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
     networks:
       - ecommerce-net
 
@@ -208,10 +254,21 @@ services:
       - REDIS_HOST=redis-cache
       - RABBITMQ_HOST=rabbitmq
       - EUREKA_HOST=discovery-service
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
     depends_on:
-      - config-server
-      - discovery-service
-      - redis-cache
+      config-server:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - ecommerce-net
 
@@ -226,14 +283,22 @@ services:
       - REDIS_HOST=redis-cache
       - RABBITMQ_HOST=rabbitmq
       - EUREKA_HOST=discovery-service
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8083/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
     depends_on:
       config-server:
-        condition: service_started
+        condition: service_healthy
       discovery-service:
-        condition: service_started
-      rabbitmq:
-        condition: service_started
+        condition: service_healthy
       sqlserver-order:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis-cache:
         condition: service_healthy
     networks:
       - ecommerce-net
@@ -249,11 +314,23 @@ services:
       - REDIS_HOST=redis-cache
       - RABBITMQ_HOST=rabbitmq
       - EUREKA_HOST=discovery-service
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8084/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
     depends_on:
-      - config-server
-      - discovery-service
-      - postgres-inventory
-      - rabbitmq
+      config-server:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+      postgres-inventory:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
     networks:
       - ecommerce-net
 
@@ -268,10 +345,23 @@ services:
       - REDIS_HOST=redis-cache
       - RABBITMQ_HOST=rabbitmq
       - EUREKA_HOST=discovery-service
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8085/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
     depends_on:
-      - config-server
-      - discovery-service
-      - postgres-customer
+      config-server:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+      postgres-customer:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - ecommerce-net
 
@@ -285,11 +375,21 @@ services:
       - REDIS_HOST=redis-cache
       - RABBITMQ_HOST=rabbitmq
       - EUREKA_HOST=discovery-service
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8089/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
     depends_on:
-      - config-server
-      - discovery-service
-      - rabbitmq
-      - redis-cache
+      config-server:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
     networks:
       - ecommerce-net
 
@@ -304,11 +404,23 @@ services:
       - REDIS_HOST=redis-cache
       - RABBITMQ_HOST=rabbitmq
       - EUREKA_HOST=discovery-service
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8090/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
     depends_on:
-      - config-server
-      - discovery-service
-      - postgres-pricing
-      - redis-cache
+      config-server:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+      postgres-pricing:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     networks:
       - ecommerce-net
 
@@ -323,11 +435,23 @@ services:
       - REDIS_HOST=redis-cache
       - RABBITMQ_HOST=rabbitmq
       - EUREKA_HOST=discovery-service
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8091/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
     depends_on:
-      - config-server
-      - discovery-service
-      - postgres-shipping
-      - rabbitmq
+      config-server:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+      postgres-shipping:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
     networks:
       - ecommerce-net
 
@@ -342,11 +466,57 @@ services:
       - REDIS_HOST=redis-cache
       - RABBITMQ_HOST=rabbitmq
       - EUREKA_HOST=discovery-service
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8092/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
     depends_on:
-      - config-server
-      - discovery-service
-      - postgres-payment
-      - rabbitmq
+      config-server:
+        condition: service_healthy
+      discovery-service:
+        condition: service_healthy
+      postgres-payment:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+    networks:
+      - ecommerce-net
+
+  # ==========================================
+  # 5. API GATEWAY (Inicia AL FINAL)
+  # ==========================================
+
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_HOST=discovery-service
+    depends_on:
+      product-service:
+        condition: service_healthy
+      cart-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      inventory-service:
+        condition: service_healthy
+      customer-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+      pricing-service:
+        condition: service_healthy
+      shipping-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
     networks:
       - ecommerce-net
 

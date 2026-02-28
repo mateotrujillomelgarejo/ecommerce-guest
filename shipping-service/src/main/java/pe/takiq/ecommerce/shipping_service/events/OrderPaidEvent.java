@@ -33,6 +33,8 @@ public class OrderPaidEvent {
     @AllArgsConstructor
     public static class OrderItemEvent {
         private String productId;
+        private String productName;
+        private String imageUrl;        
         private Integer quantity;
         private BigDecimal unitPriceSnapshot;
     }

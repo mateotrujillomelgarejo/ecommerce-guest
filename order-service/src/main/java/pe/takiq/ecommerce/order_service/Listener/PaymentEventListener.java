@@ -67,6 +67,8 @@ public void handlePaymentSucceeded(PaymentSucceededEvent event) throws Exception
                 .items(order.getItems().stream().map(item ->
                         OrderPaidEvent.OrderItemEvent.builder()
                                 .productId(item.getProductId())
+                                .productName(item.getProductName())
+                                .imageUrl(item.getImageUrl())
                                 .quantity(item.getQuantity())
                                 .unitPriceSnapshot(
                                         BigDecimal.valueOf(

@@ -9,4 +9,5 @@ public class CartItemResponseDTO {
     private Double price;
     private Integer quantity;
     private Double subtotal;
+    private String imageUrl;
 }

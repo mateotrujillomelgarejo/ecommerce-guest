@@ -10,7 +10,7 @@ spring:
 
   data:
     mongodb:
-      uri: mongodb://product_user:Product123@${DB_HOST:localhost}:27017/ecommerce_product?authSource=admin
+      uri: mongodb://product_user:Product123@${DB_HOST:localhost}:27017/ecommerce_product?authSource=${BD_MONG:ecommerce_product}
       auto-index-creation: true
 
   cache:

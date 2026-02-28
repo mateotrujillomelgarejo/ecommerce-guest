@@ -20,6 +20,7 @@ public class CartMapper {
             i.setPrice(item.getPrice());
             i.setQuantity(item.getQuantity());
             i.setSubtotal(item.getPrice() * item.getQuantity());
+            i.setImageUrl(item.getImageUrl());
             return i;
         }).toList();
 

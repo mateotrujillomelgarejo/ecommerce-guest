@@ -7,7 +7,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import pe.takiq.ecommerce.order_service.config.RabbitMQConfig;
 import pe.takiq.ecommerce.order_service.event.OrderShippedEvent;
-import pe.takiq.ecommerce.order_service.model.OrderStatus;
 import pe.takiq.ecommerce.order_service.service.OrderService;
 
 import java.time.Duration;

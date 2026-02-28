@@ -54,12 +54,19 @@ public class CartService {
             cart.updateQuantity(req.getProductId(), existing.get().getQuantity() + req.getQuantity());
         } else {
             try {
+
                 ProductDTO product = integrationManager.getProduct(req.getProductId());
+
+                String principalImage = (product.getImages() != null && !product.getImages().isEmpty()) 
+                        ? product.getImages().get(0) 
+                        : null;
+
                 CartItem item = new CartItem(
                         product.getId(),
                         product.getName(),
                         product.getPrice(),
-                        req.getQuantity()
+                        req.getQuantity(),
+                        principalImage
                 );
                 cart.addItem(item);
             } catch (Exception e) {

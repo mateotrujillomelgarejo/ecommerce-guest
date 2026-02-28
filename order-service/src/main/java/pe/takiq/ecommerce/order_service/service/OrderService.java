@@ -80,6 +80,8 @@ public class OrderService {
                 item.setProductId(dto.getProductId());
                 item.setQuantity(dto.getQuantity());
                 item.setPrice(dto.getPrice());
+                item.setProductName(dto.getProductName());
+                item.setImageUrl(dto.getImageUrl());
                 return item;
             }).collect(Collectors.toList()));
         } else {
@@ -135,6 +137,8 @@ public class OrderService {
                 c.setProductId(item.getProductId());
                 c.setQuantity(item.getQuantity());
                 c.setPrice(item.getPrice());
+                c.setProductName(item.getProductName());
+                c.setImageUrl(item.getImageUrl()); 
                 return c;
             }).collect(Collectors.toList()));
         }

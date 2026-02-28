@@ -39,5 +39,7 @@ public class Order {
         private String productId;
         private Integer quantity;
         private Double price;
+        private String productName;
+        private String imageUrl;
     }
 }

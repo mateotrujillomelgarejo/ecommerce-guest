@@ -224,6 +224,7 @@ services:
       - REDIS_HOST=redis-cache
       - RABBITMQ_HOST=rabbitmq
       - EUREKA_HOST=discovery-service
+      - BD_MONG=admin
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/actuator/health"]
       interval: 15s
@@ -283,6 +284,7 @@ services:
       - REDIS_HOST=redis-cache
       - RABBITMQ_HOST=rabbitmq
       - EUREKA_HOST=discovery-service
+      - ORD_USR=sa
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8083/actuator/health"]
       interval: 15s
@@ -519,6 +521,22 @@ services:
         condition: service_healthy
     networks:
       - ecommerce-net
+
+
+  # ==========================================
+  # 6. FRONTEND (Angular SSR)
+  # ==========================================
+  frontend:
+    build: ./frontend
+    container_name: frontend-app
+    ports:
+      - "3000:4000"
+    depends_on:
+      api-gateway:
+        condition: service_started
+    networks:
+      - ecommerce-net
+
 
 volumes:
   redis-data:

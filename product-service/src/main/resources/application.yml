@@ -66,6 +66,3 @@ management:
     web:
       exposure:
         include: health,info,metrics,prometheus
-
-inventory-service:
-  url: ${INVENTORY_SERVICE_URL:http://localhost:8084}

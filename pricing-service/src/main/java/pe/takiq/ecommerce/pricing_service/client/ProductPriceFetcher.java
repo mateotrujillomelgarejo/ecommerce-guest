@@ -18,7 +18,7 @@ public class ProductPriceFetcher {
 
     private final ProductClient productClient;
 
-    @CircuitBreaker(name = "productClient", fallbackMethod = "fetchPricesFallback")
+    @CircuitBreaker(name = "productClient")
     @Retry(name = "productClient")
     public List<ProductPriceDTO> fetchPricesConResiliencia(List<String> productIds) {
         return productClient.getBulkPrices(productIds);

@@ -190,7 +190,6 @@ services:
       - REDIS_HOST=redis-cache
       - RABBITMQ_HOST=rabbitmq
       - EUREKA_HOST=discovery-service
-      - INVENTORY_SERVICE_URL=http://inventory-service:8084
     depends_on:
       - config-server
       - discovery-service
@@ -209,13 +208,9 @@ services:
       - REDIS_HOST=redis-cache
       - RABBITMQ_HOST=rabbitmq
       - EUREKA_HOST=discovery-service
-      - PRODUCT_SERVICE_URL=http://product-service:8081
-      - INVENTORY_SERVICE_URL=http://inventory-service:8084
-      - PRICING_SERVICE_URL=http://pricing-service:8090
     depends_on:
       - config-server
       - discovery-service
-      - postgres-cart
       - redis-cache
     networks:
       - ecommerce-net
@@ -231,7 +226,6 @@ services:
       - REDIS_HOST=redis-cache
       - RABBITMQ_HOST=rabbitmq
       - EUREKA_HOST=discovery-service
-      - CUSTOMER_SERVICE_URL=http://customer-service:8085
     depends_on:
       config-server:
         condition: service_started
@@ -310,7 +304,6 @@ services:
       - REDIS_HOST=redis-cache
       - RABBITMQ_HOST=rabbitmq
       - EUREKA_HOST=discovery-service
-      - PRODUCT_SERVICE_URL=http://product-service:8081
     depends_on:
       - config-server
       - discovery-service

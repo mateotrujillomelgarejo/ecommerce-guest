@@ -5,10 +5,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import pe.takiq.ecommerce.shipping_service.dto.GuestResponseDTO;
 
-@FeignClient(
-    name = "customer-service",
-    url = "${customer-service.url:http://localhost:8085}"
-)
+@FeignClient(name = "customer-service")
 public interface CustomerClient {
 
     @GetMapping("/guests/session/{sessionId}")

@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 import pe.takiq.ecommerce.pricing_service.dto.ProductPriceDTO;
 
-@FeignClient(name = "product-service", url = "${product-service.url:http://localhost:8081}")
+@FeignClient(name = "product-service")
 public interface ProductClient {
 
     @PostMapping("/products/bulk-prices")

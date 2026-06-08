@@ -5,7 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Data
 @Builder
@@ -14,5 +14,9 @@ import java.time.LocalDateTime;
 public class OrderShippedEvent {
     private String orderId;
     private String trackingNumber;
-    private LocalDateTime shippedAt;
+    private Instant shippedAt;
+    private String guestEmail;
+    private String carrier;
+    private String estimatedDelivery;
+    private String message;
 }

@@ -4,7 +4,9 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
 import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 @Builder
@@ -13,6 +15,13 @@ import java.math.BigDecimal;
 public class ProductUpdatedEvent {
     private String productId;
     private String name;
+    private String description;
+    private String category;
+    private String subcategory;
+    private List<String> tags;
     private BigDecimal price;
+    private Double averageRating;
+    private Integer reviewCount;
+    private String imageUrl;
     private boolean active;
 }

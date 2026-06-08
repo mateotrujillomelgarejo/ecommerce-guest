@@ -13,12 +13,15 @@ spring:
       uri: mongodb://product_user:Product123@${DB_HOST:localhost}:27017/ecommerce_product?authSource=${BD_MONG:ecommerce_product}
       auto-index-creation: true
 
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+      timeout: 2000ms
+
   cache:
     type: redis
     redis:
       time-to-live: 300000
-
-
 
   cloud:
     openfeign:
@@ -28,12 +31,15 @@ spring:
             connectTimeout: 5000
             readTimeout: 10000
 
-
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: 5672
     username: guest
     password: guest
+
+rabbitmq:
+  queue:
+    product-rating-updated: product.product-rating-updated.queue
 
 eureka:
   client:

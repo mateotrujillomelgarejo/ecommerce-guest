@@ -1,8 +1,9 @@
 package pe.takiq.ecommerce.cart_service.controller;
 
-import org.springframework.web.bind.annotation.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.*;
 import pe.takiq.ecommerce.cart_service.dto.request.AddItemRequestDTO;
+import pe.takiq.ecommerce.cart_service.dto.request.MergeCartRequestDTO;
 import pe.takiq.ecommerce.cart_service.dto.request.UpdateItemRequestDTO;
 import pe.takiq.ecommerce.cart_service.dto.response.CartResponseDTO;
 import pe.takiq.ecommerce.cart_service.service.CartService;
@@ -48,5 +49,10 @@ public class CartController {
             @RequestParam("sessionId") String sessionId,
             @PathVariable("productId") String productId) {
         return service.removeItemFull(sessionId, productId);
+    }
+
+    @PostMapping("/merge")
+    public CartResponseDTO mergeCart(@RequestBody MergeCartRequestDTO request) {
+        return service.mergeCart(request);
     }
 }

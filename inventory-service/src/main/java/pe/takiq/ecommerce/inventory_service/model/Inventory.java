@@ -33,6 +33,12 @@ public class Inventory {
     @Column(nullable = false)
     private Integer availableQuantity;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private Integer reservedQuantity = 0;
+
+    @Column(nullable = false)
+    @Builder.Default
     private boolean active = true;
 
     private LocalDateTime lastUpdated;
@@ -41,5 +47,6 @@ public class Inventory {
     @PreUpdate
     void onUpdate() {
         lastUpdated = LocalDateTime.now();
+        if (reservedQuantity == null) reservedQuantity = 0;
     }
 }

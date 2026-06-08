@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import pe.takiq.ecommerce.notification_service.config.RabbitMQConfig;
 import pe.takiq.ecommerce.notification_service.events.OrderPaidEvent;
 import pe.takiq.ecommerce.notification_service.events.OrderShippedEvent;
+import pe.takiq.ecommerce.notification_service.events.UserRegisteredEvent;
 import pe.takiq.ecommerce.notification_service.service.EmailNotificationService;
 
 @Slf4j
@@ -19,14 +20,21 @@ public class OrderEventListener {
 
     @RabbitListener(queues = RabbitMQConfig.ORDER_PAID_QUEUE)
     public void onOrderPaid(OrderPaidEvent event) {
-        log.info("Enviando email de confirmación de pedido recibido y pagado → orderId: {}", event.getOrderId());
+        log.info("order.paid recibido → orderId={}", event.getOrderId());
         emailService.sendOrderPaidNotification(event);
     }
 
     @RabbitListener(queues = RabbitMQConfig.ORDER_SHIPPED_QUEUE)
     public void onOrderShipped(OrderShippedEvent event) {
-        log.info("Enviando email de envío → orderId: {}, tracking: {}", 
-                 event.getOrderId(), event.getTrackingNumber());
+        log.info("order.shipped recibido → orderId={}, tracking={}",
+                event.getOrderId(), event.getTrackingNumber());
         emailService.sendShippingConfirmation(event);
+    }
+
+    @RabbitListener(queues = RabbitMQConfig.USER_REGISTERED_QUEUE)
+    public void onUserRegistered(UserRegisteredEvent event) {
+        log.info("user.registered recibido → userId={}, email={}",
+                event.getUserId(), event.getEmail());
+        emailService.sendWelcomeEmail(event);
     }
 }

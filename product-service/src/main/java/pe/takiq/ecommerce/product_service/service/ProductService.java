@@ -76,28 +76,36 @@ public class ProductService {
 
 
     @Caching(
-        evict = { 
-            @CacheEvict(value = "productsContent", allEntries = true),
-            @CacheEvict(value = "productsTotal", allEntries = true),
-            @CacheEvict(value = "productsByName", allEntries = true),
-            @CacheEvict(value = "productsByCategory", allEntries = true),
-            @CacheEvict(value = "productsByPrice", allEntries = true),
-            @CacheEvict(value = "popularProducts", allEntries = true)
+        evict = {
+            @CacheEvict(value = "productsContent",      allEntries = true),
+            @CacheEvict(value = "productsTotal",         allEntries = true),
+            @CacheEvict(value = "productsByName",        allEntries = true),
+            @CacheEvict(value = "productsByCategory",    allEntries = true),
+            @CacheEvict(value = "productsByPrice",       allEntries = true),
+            @CacheEvict(value = "popularProducts",       allEntries = true)
         },
         put = { @CachePut(value = "productById", key = "#result.id") }
     )
     public Product save(Product product) {
         Product saved = repository.save(product);
-        
+
         ProductUpdatedEvent event = ProductUpdatedEvent.builder()
                 .productId(saved.getId())
                 .name(saved.getName())
-                .price(BigDecimal.valueOf(saved.getPrice()))
+                .description(saved.getDescription())
+                .category(saved.getCategory())
+                .subcategory(saved.getSubcategory())
+                .tags(saved.getTags())
+                .price(saved.getPrice())
+                .averageRating(saved.getAverageRating())
+                .reviewCount(saved.getReviewCount())
+                .imageUrl(saved.getImages() != null && !saved.getImages().isEmpty()
+                        ? saved.getImages().get(0) : null)
                 .active(saved.isActive())
                 .build();
-                
+
         rabbitTemplate.convertAndSend("ecommerce.events", "product.updated", event);
-        
+
         return saved;
     }
 
@@ -105,10 +113,9 @@ public class ProductService {
     @CircuitBreaker(name = "inventoryClient", fallbackMethod = "detailFallback")
     @Retry(name = "inventoryClient")
     public ProductDetailDTO getDetails(String id, Integer quantity) {
+    Product product = findById(id);
 
-        Product product = repository.findById(id).orElseThrow(() -> new RuntimeException("Producto no encontrado")); 
-        
-        Boolean available = inventoryClient.checkStock(id, quantity == null ? 1 : quantity);
+    Boolean available = inventoryClient.checkStock(id, quantity == null ? 1 : quantity);
 
         ProductDetailDTO dto = new ProductDetailDTO();
         dto.setProduct(product);
@@ -131,43 +138,34 @@ public class ProductService {
         return StreamSupport.stream(products.spliterator(), false)
                 .map(p -> new ProductPriceDTO(
                         p.getId(), 
-                        p.getPrice() != null ? BigDecimal.valueOf(p.getPrice()) : BigDecimal.ZERO
+                        p.getPrice() != null ? p.getPrice() : BigDecimal.ZERO
                 ))
                 .collect(Collectors.toList());
     }
 
-
-    @Caching(
-        evict = { 
-            @CacheEvict(value = "productsContent", allEntries = true),
-            @CacheEvict(value = "productsTotal", allEntries = true),
-            @CacheEvict(value = "productsByName", allEntries = true),
-            @CacheEvict(value = "productsByCategory", allEntries = true),
-            @CacheEvict(value = "productsByPrice", allEntries = true),
-            @CacheEvict(value = "popularProducts", allEntries = true)
-        },
-        put = { @CachePut(value = "productById", key = "#id") }
-    )
     public Product update(String id, Product updatedProduct) {
         Product existing = findById(id);
         existing.setName(updatedProduct.getName());
         existing.setDescription(updatedProduct.getDescription());
         existing.setPrice(updatedProduct.getPrice());
         existing.setCategory(updatedProduct.getCategory());
+        existing.setSubcategory(updatedProduct.getSubcategory());
         existing.setImages(updatedProduct.getImages());
         existing.setTags(updatedProduct.getTags());
+        existing.setSku(updatedProduct.getSku());
         existing.setActive(updatedProduct.isActive());
+
         return save(existing);
     }
 
-    @Caching(
-        evict = { 
-            @CacheEvict(value = "productsContent", allEntries = true),
-            @CacheEvict(value = "productsTotal", allEntries = true),
-            @CacheEvict(value = "popularProducts", allEntries = true)
-        },
-        put = { @CachePut(value = "productById", key = "#id") }
-    )
+    @Caching(evict = {
+        @CacheEvict(value = "productsContent", allEntries = true),
+        @CacheEvict(value = "productsTotal",   allEntries = true),
+        @CacheEvict(value = "productsByName",  allEntries = true),
+        @CacheEvict(value = "productsByCategory", allEntries = true),
+        @CacheEvict(value = "productsByPrice", allEntries = true),
+        @CacheEvict(value = "popularProducts", allEntries = true)
+    })
     public void softDelete(String id) {
         Product existing = findById(id);
         existing.setActive(false);

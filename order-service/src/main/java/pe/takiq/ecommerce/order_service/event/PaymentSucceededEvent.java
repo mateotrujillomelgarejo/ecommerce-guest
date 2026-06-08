@@ -1,6 +1,7 @@
 package pe.takiq.ecommerce.order_service.event;
 
-import java.time.LocalDateTime;
+import java.math.BigDecimal;
+import java.time.Instant;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -16,10 +17,10 @@ import lombok.Setter;
 @Getter
 @Setter
 public class PaymentSucceededEvent {
-    private String orderId;           // Clave principal para que Order Service lo procese
-    private String paymentId;         // Idempotency key
-    private Double amount;
+    private String orderId;
+    private String paymentId;
+    private BigDecimal amount;
     private String gateway;
-    private LocalDateTime confirmedAt;
+    private Instant confirmedAt;
     private String guestEmail;
 }

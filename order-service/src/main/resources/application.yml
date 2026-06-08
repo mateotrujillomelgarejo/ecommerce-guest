@@ -10,20 +10,24 @@ spring:
 
   data:
     redis:
-      host: localhost
+      host: ${REDIS_HOST:localhost}
       port: 6379
+      timeout: 2000ms
 
   rabbitmq:
-    host: localhost
+    host: ${RABBITMQ_HOST:localhost}
     port: 5672
     username: guest
     password: guest
 
   datasource:
-    url: jdbc:sqlserver://localhost:1433;databaseName=orderdb;encrypt=true;trustServerCertificate=true
-    username: order_user
-    password: TuPasswordFuerte123!
+    url: jdbc:sqlserver://${DB_HOST:localhost}:1433;databaseName=orderdb;encrypt=true;trustServerCertificate=true
+    username: ${DB_USER:order_user}
+    password: ${DB_PASS:TuPasswordFuerte123!}
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
 
   jpa:
     hibernate:
@@ -42,19 +46,18 @@ resilience4j:
         failureRateThreshold: 50
         waitDurationInOpenState: 10s
         permittedNumberOfCallsInHalfOpenState: 3
-      pricingClient:
+      inventoryClient:
         registerHealthIndicator: true
         slidingWindowSize: 10
         failureRateThreshold: 50
         waitDurationInOpenState: 10s
         permittedNumberOfCallsInHalfOpenState: 3
-
   retry:
     instances:
       customerClient:
         maxAttempts: 3
         waitDuration: 500ms
-      pricingClient:
+      inventoryClient:
         maxAttempts: 3
         waitDuration: 500ms
 
@@ -69,7 +72,6 @@ eureka:
     register-with-eureka: true
     fetch-registry: true
     service-url:
-      defaultZone: http://localhost:8761/eureka/
-
+      defaultZone: http://${EUREKA_HOST:localhost}:8761/eureka/
   instance:
     prefer-ip-address: true

@@ -56,22 +56,30 @@ public class OrderService {
             }
         }
         reserveReq.setItems(reserveItems);
-        
-        try{
+
+        try {
             integrationManager.reserveStock(reserveReq);
         } catch (FeignException.BadRequest | FeignException.Conflict e) {
             throw new BusinessException("Stock insuficiente para uno o más productos. Por favor revisa tu carrito.");
-        } catch (Exception e){
+        } catch (Exception e) {
             log.error("Fallo del servicio de inventario o Circuit Breaker abierto", e);
             throw new BusinessException("No pudimos procesar el inventario temporalmente. Intenta de nuevo en unos minutos.");
         }
-        
+
         Order order = new Order();
         order.setId(orderId);
         order.setGuestId(request.getGuestId());
         order.setSessionId(request.getSessionId());
         order.setGuestEmail(guest.getEmail());
+
+        // ── Guardar desglose financiero completo ────────────────────────────
+        order.setSubtotal(request.getSubtotal() != null ? request.getSubtotal() : BigDecimal.ZERO);
+        order.setDiscount(request.getDiscount() != null ? request.getDiscount() : BigDecimal.ZERO);
+        order.setTax(request.getTax() != null ? request.getTax() : BigDecimal.ZERO);
+        order.setShippingCost(request.getShippingCost() != null ? request.getShippingCost() : BigDecimal.ZERO);
         order.setTotalAmount(request.getTotal());
+        // ───────────────────────────────────────────────────────────────────
+
         order.setStatus(OrderStatus.PAYMENT_PENDING);
 
         if (request.getItems() != null) {
@@ -130,7 +138,7 @@ public class OrderService {
         dto.setStatus(order.getStatus());
         dto.setCreatedAt(order.getCreatedAt());
         dto.setTrackingNumber(order.getTrackingNumber());
-        
+
         if (order.getItems() != null) {
             dto.setItems(order.getItems().stream().map(item -> {
                 CartItemDTO c = new CartItemDTO();
@@ -138,13 +146,12 @@ public class OrderService {
                 c.setQuantity(item.getQuantity());
                 c.setPrice(item.getPrice());
                 c.setProductName(item.getProductName());
-                c.setImageUrl(item.getImageUrl()); 
+                c.setImageUrl(item.getImageUrl());
                 return c;
             }).collect(Collectors.toList()));
         }
         return dto;
     }
-
 
     public List<OrderResponseDTO> getAllOrdersForAdmin() {
         return repository.findAll().stream()
@@ -152,4 +159,13 @@ public class OrderService {
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
     }
+
+    public boolean verifyPurchase(String userId, String productId) {
+        return repository.existsByUserIdAndProductIdAndStatusIn(
+            userId,
+            productId,
+            List.of(OrderStatus.PAID, OrderStatus.SHIPPED, OrderStatus.DELIVERED)
+        );
+    }
+
 }

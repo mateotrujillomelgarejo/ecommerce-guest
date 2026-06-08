@@ -23,16 +23,17 @@ public class PricingController {
     private final PromotionRepository promotionRepository;
 
     @PostMapping("/calculate")
-    public ResponseEntity<PriceCalculationResponse> calculate(@RequestBody PriceCalculationRequest request) {
+    public ResponseEntity<PriceCalculationResponse> calculate(
+            @RequestBody PriceCalculationRequest request) {
         return ResponseEntity.ok(pricingService.calculatePrice(request));
     }
 
-    // ─── Admin Endpoints (futuro protegidos con security) ───
+    // ─── Admin Endpoints ─────────────────────────────────────────────────────
 
     @PostMapping("/admin/coupons")
     public ResponseEntity<Coupon> createCoupon(@RequestBody Coupon coupon) {
         Coupon saved = couponRepository.save(coupon);
-        pricingService.invalidateCaches();
+        pricingService.invalidateAllCaches();
         return ResponseEntity.ok(saved);
     }
 
@@ -42,22 +43,32 @@ public class PricingController {
     }
 
     @PutMapping("/admin/coupons/{id}")
-    public ResponseEntity<Coupon> updateCoupon(@PathVariable Long id, @RequestBody Coupon coupon) {
+    public ResponseEntity<Coupon> updateCoupon(
+            @PathVariable Long id, @RequestBody Coupon coupon) {
         coupon.setId(id);
         Coupon updated = couponRepository.save(coupon);
-        pricingService.invalidateCaches();
+        pricingService.invalidateAllCaches();
         return ResponseEntity.ok(updated);
     }
 
     @PostMapping("/admin/promotions")
     public ResponseEntity<Promotion> createPromotion(@RequestBody Promotion promotion) {
         Promotion saved = promotionRepository.save(promotion);
-        pricingService.invalidateCaches();
+        pricingService.invalidateAllCaches();
         return ResponseEntity.ok(saved);
     }
 
     @GetMapping("/admin/promotions")
     public ResponseEntity<List<Promotion>> getAllPromotions() {
         return ResponseEntity.ok(promotionRepository.findAll());
+    }
+
+    @PutMapping("/admin/promotions/{id}")
+    public ResponseEntity<Promotion> updatePromotion(
+            @PathVariable Long id, @RequestBody Promotion promotion) {
+        promotion.setId(id);
+        Promotion updated = promotionRepository.save(promotion);
+        pricingService.invalidateAllCaches();
+        return ResponseEntity.ok(updated);
     }
 }

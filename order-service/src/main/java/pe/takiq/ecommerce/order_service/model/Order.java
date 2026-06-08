@@ -15,23 +15,30 @@ public class Order {
     @Id
     private String id = UUID.randomUUID().toString();
     private String guestId;
-    
-    private String sessionId;  
-    private String guestEmail; 
-    
+
+    private String sessionId;
+    private String guestEmail;
+
     @ElementCollection
     private List<OrderItem> items;
-    
-    private BigDecimal totalAmount;
+
+    // ── Desglose financiero ──────────────────────────────────────────────────
+    private BigDecimal subtotal;      // suma de precio × cantidad antes de descuentos
+    private BigDecimal discount;      // descuento total aplicado (cupón + promociones)
+    private BigDecimal tax;           // IGV (18%)
+    private BigDecimal shippingCost;  // costo de envío calculado por Pricing/Shipping
+    private BigDecimal totalAmount;   // total final = subtotal - discount + tax + shippingCost
+    // ────────────────────────────────────────────────────────────────────────
+
     private String paymentId;
-    
+
     @Enumerated(EnumType.STRING)
     private OrderStatus status = OrderStatus.PAYMENT_PENDING;
-    
+
     private LocalDateTime createdAt = LocalDateTime.now();
 
     private String trackingNumber;
-    private String failureReason; 
+    private String failureReason;
 
     @Embeddable
     @Data

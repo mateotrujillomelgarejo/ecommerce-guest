@@ -14,7 +14,8 @@ import pe.takiq.ecommerce.payment_service.repository.PaymentOutboxRepository;
 import pe.takiq.ecommerce.payment_service.repository.PaymentTransactionRepository;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -26,17 +27,33 @@ public class PaymentService {
     private final PaymentOutboxRepository outboxRepository;
     private final ObjectMapper objectMapper;
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // PASO 1 — INICIAR PAGO
+    // ─────────────────────────────────────────────────────────────────────────
+
     @Transactional
     public PaymentResponse initiatePayment(PaymentRequest request) {
-        if (request.getOrderId() == null || request.getOrderId().trim().isEmpty()) {
+        if (request.getOrderId() == null || request.getOrderId().isBlank()) {
             throw new IllegalArgumentException("orderId es obligatorio");
         }
         if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("amount debe ser > 0");
         }
 
-        // Simulación: Aquí harías la llamada a Stripe (Stripe.createSession)
-        String paymentId = UUID.randomUUID().toString(); 
+        Optional<PaymentTransaction> existing =
+                transactionRepository.findByOrderIdAndStatus(request.getOrderId(), "PENDING");
+        if (existing.isPresent()) {
+            log.info("Ya existe transacción PENDING para orderId={}. Devolviendo paymentId existente.",
+                    request.getOrderId());
+            PaymentTransaction tx = existing.get();
+            PaymentResponse response = new PaymentResponse();
+            response.setPaymentId(tx.getPaymentId());
+            response.setStatus("PENDING");
+            response.setMessage("Pago ya iniciado previamente.");
+            return response;
+        }
+
+        String paymentId = UUID.randomUUID().toString();
 
         PaymentTransaction tx = new PaymentTransaction();
         tx.setPaymentId(paymentId);
@@ -54,31 +71,39 @@ public class PaymentService {
         PaymentResponse response = new PaymentResponse();
         response.setPaymentId(paymentId);
         response.setStatus("PENDING");
-        response.setRedirectUrl(request.getReturnUrl() != null 
-            ? request.getReturnUrl() + "?paymentId=" + paymentId + "&status=pending" : null);
+        response.setRedirectUrl(request.getReturnUrl() != null
+                ? request.getReturnUrl() + "?paymentId=" + paymentId + "&status=pending" : null);
         response.setMessage("Pago iniciado. Completa el proceso.");
-        
         return response;
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PASO 2 — CONFIRMAR PAGO
+    // ─────────────────────────────────────────────────────────────────────────
 
     @Transactional
     public void confirmPayment(String paymentId) {
         PaymentTransaction tx = transactionRepository.findByPaymentId(paymentId)
                 .orElseThrow(() -> new RuntimeException("Transacción no encontrada: " + paymentId));
 
-        if ("SUCCESS".equals(tx.getStatus())) return;
-        if (!"PENDING".equals(tx.getStatus())) throw new IllegalStateException("Estado inválido: " + tx.getStatus());
+        if ("SUCCESS".equals(tx.getStatus())) {
+            log.info("Pago {} ya fue confirmado anteriormente. Ignorando.", paymentId);
+            return;
+        }
 
+        if (!"PENDING".equals(tx.getStatus())) {
+            throw new IllegalStateException(
+                    "No se puede confirmar un pago en estado: " + tx.getStatus());
+        }
         tx.setStatus("SUCCESS");
-        tx.setUpdatedAt(LocalDateTime.now());
         transactionRepository.save(tx);
 
         PaymentSucceededEvent event = PaymentSucceededEvent.builder()
                 .orderId(tx.getOrderId())
                 .paymentId(tx.getPaymentId())
-                .amount(tx.getAmount().doubleValue())
+                .amount(tx.getAmount())
                 .gateway(tx.getGateway())
-                .confirmedAt(LocalDateTime.now())
+                .confirmedAt(Instant.now())
                 .guestEmail(tx.getGuestEmail())
                 .build();
 
@@ -91,8 +116,13 @@ public class PaymentService {
             throw new RuntimeException("Error serializando evento de pago", e);
         }
 
-        log.info("Pago confirmado y guardado en Outbox → paymentId={}", paymentId);
+        log.info("Pago confirmado y guardado en Outbox → paymentId={}, orderId={}",
+                paymentId, tx.getOrderId());
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // FALLO MANUAL
+    // ─────────────────────────────────────────────────────────────────────────
 
     @Transactional
     public void failPayment(String paymentId) {
@@ -105,23 +135,27 @@ public class PaymentService {
 
         tx.setStatus("FAILED");
         transactionRepository.save(tx);
-        log.warn("Pago fallido manualmente → paymentId={}, orderId={}", paymentId, tx.getOrderId());
+        log.warn("Pago fallido → paymentId={}, orderId={}", paymentId, tx.getOrderId());
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // REEMBOLSO — disparado por inventory.failed
+    // ─────────────────────────────────────────────────────────────────────────
 
     @Transactional
     public void processRefundForFailedOrder(String orderId) {
         transactionRepository.findByOrderIdAndStatus(orderId, "SUCCESS")
                 .ifPresent(tx -> {
-                    log.info("Conectando con pasarela para reembolsar orden: {}", orderId);
-                    
-                    // TODO: Llamada HTTP real a la pasarela (ej. stripeClient.refund(tx.getPaymentId()))
-                    // Si esta llamada HTTP falla, el método lanzará excepción, deshaciendo la transacción 
-                    // y permitiendo que RabbitMQ reintente la compensación de la Saga más tarde.
-                    
+                    log.info("Procesando reembolso para orderId={}, paymentId={}",
+                            orderId, tx.getPaymentId());
+
+                    // En producción: llamada HTTP real a la pasarela de pago
+                    // Si la llamada falla, la excepción deshace la transacción
+                    // y RabbitMQ reintentará el evento
+
                     tx.setStatus("REFUNDED");
-                    tx.setUpdatedAt(LocalDateTime.now());
                     transactionRepository.save(tx);
-                    log.warn("SAGA REVERSAL: Reembolso procesado exitosamente para la orden: {}", tx.getOrderId());
+                    log.warn("Reembolso procesado exitosamente para orderId={}", orderId);
                 });
     }
 }

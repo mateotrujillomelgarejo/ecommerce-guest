@@ -5,11 +5,13 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @Data
 @Document(collection = "products")
 public class Product {
+
     @Id
     private String id;
 
@@ -17,16 +19,28 @@ public class Product {
     private String name;
 
     private String description;
-    private Double price;
+
+    private BigDecimal price;
 
     @Indexed
     private String category;
 
-    private List<String> images;
+    private String subcategory;
 
-    private Double averageRating;
+    private List<String> images;
 
     private List<String> tags;
 
-    private boolean active = true; 
+    @Indexed(unique = true, sparse = true)
+    private String sku;
+
+    private Double averageRating;
+
+    private Integer reviewCount;
+
+    private String metaTitle;
+    private String metaDescription;
+    private String slug;
+
+    private boolean active = true;
 }

@@ -1,11 +1,11 @@
 package pe.takiq.ecommerce.shipping_service.service;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional; // Spring Transactional
+import org.springframework.transaction.annotation.Transactional;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,13 +37,15 @@ public class ShippingService {
         return repository.findByOrderId(orderId).isPresent();
     }
 
+    // ── Cotización (con Circuit Breaker + fallback LIMA01) ───────────────────
+
     @CircuitBreaker(name = "customerClient", fallbackMethod = "guestFallback")
     public GuestResponseDTO getGuestForQuote(String sessionId) {
         return customerClient.getGuestBySessionId(sessionId);
     }
 
     public GuestResponseDTO guestFallback(String sessionId, Throwable t) {
-        log.warn("Customer-Service inalcanzable para cotización. Usando fallback genérico.");
+        log.warn("User Service inalcanzable para cotización. Usando fallback LIMA01.");
         GuestResponseDTO fallback = new GuestResponseDTO();
         fallback.setSessionId(sessionId);
         AddressRequestDTO address = new AddressRequestDTO();
@@ -55,10 +57,13 @@ public class ShippingService {
     public ShippingCalculationResponse calculateShipping(ShippingCalculationRequest req) {
         BigDecimal total = req.getOrderTotal() != null ? req.getOrderTotal() : BigDecimal.ZERO;
         BigDecimal cost = calculateCost(total);
-        String msg = cost.equals(BigDecimal.ZERO) ? "¡Envío gratis por superar S/300!" : "Envío estándar";
+        String msg = cost.compareTo(BigDecimal.ZERO) == 0
+                ? "¡Envío gratis por superar S/300!"
+                : "Envío estándar";
         return new ShippingCalculationResponse(cost, "3-5 días hábiles", msg);
     }
 
+    // ── Envío obligatorio (con Retry 3 intentos 1s) ──────────────────────────
 
     @Retry(name = "customerClient")
     public GuestResponseDTO getGuestMandatory(String sessionId) {
@@ -67,14 +72,17 @@ public class ShippingService {
 
     @Transactional
     public void createAndShip(OrderPaidEvent event) {
-
         GuestResponseDTO guest = getGuestMandatory(event.getSessionId());
 
         if (guest.getAddress() == null || guest.getAddress().getStreet() == null) {
-            throw new IllegalStateException("El cliente no tiene una dirección válida registrada. No se puede enviar la orden: " + event.getOrderId());
+            throw new IllegalStateException(
+                    "El cliente no tiene dirección válida. No se puede enviar la orden: "
+                    + event.getOrderId());
         }
 
         BigDecimal shippingCost = calculateCost(event.getTotal());
+    
+        Instant now = Instant.now();
 
         Shipment shipment = Shipment.builder()
                 .orderId(event.getOrderId())
@@ -85,32 +93,35 @@ public class ShippingService {
                 .shippingCost(shippingCost)
                 .estimatedDelivery("3-5 días hábiles")
                 .status("SHIPPED")
-                .shippedAt(LocalDateTime.now())
+                .shippedAt(now)
                 .build();
 
         shipment = repository.save(shipment);
-        
-        publishShippedEvent(shipment, guest.getEmail());
+        publishShippedEvent(shipment, guest.getEmail(), now);
 
-        log.info("Shipment creado y SHIPPED → orderId={}, tracking={}",
+        log.info("Shipment creado → orderId={}, tracking={}",
                 shipment.getOrderId(), shipment.getTrackingNumber());
     }
 
-    private void publishShippedEvent(Shipment s, String email) {
+    private void publishShippedEvent(Shipment s, String email, Instant shippedAt) {
         OrderShippedEvent event = OrderShippedEvent.builder()
                 .orderId(s.getOrderId())
                 .trackingNumber(s.getTrackingNumber())
                 .carrier("Serpost")
                 .estimatedDelivery(s.getEstimatedDelivery())
-                .shippedAt(s.getShippedAt())
+                .shippedAt(shippedAt)
                 .guestEmail(email)
                 .message("Tu pedido ya está en camino")
                 .build();
 
-        rabbitTemplate.convertAndSend(RabbitMQConfig.ORDER_EVENTS_EXCHANGE, RabbitMQConfig.ROUTING_KEY_SHIPPED, event);
+        rabbitTemplate.convertAndSend(
+                RabbitMQConfig.ORDER_EVENTS_EXCHANGE,
+                RabbitMQConfig.ROUTING_KEY_SHIPPED,
+                event);
     }
 
     private BigDecimal calculateCost(BigDecimal total) {
+        if (total == null) return new BigDecimal("15.00");
         if (total.compareTo(new BigDecimal("300")) >= 0) return BigDecimal.ZERO;
         if (total.compareTo(new BigDecimal("100")) >= 0) return new BigDecimal("10.00");
         return new BigDecimal("15.00");

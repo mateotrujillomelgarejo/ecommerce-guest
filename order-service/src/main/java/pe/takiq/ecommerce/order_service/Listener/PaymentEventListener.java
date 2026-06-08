@@ -31,71 +31,74 @@ public class PaymentEventListener {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
-@Transactional
-@RabbitListener(queues = RabbitMQConfig.QUEUE_PAYMENT_SUCCEEDED)
-public void handlePaymentSucceeded(PaymentSucceededEvent event) throws Exception {
+    @Transactional
+    @RabbitListener(queues = RabbitMQConfig.QUEUE_PAYMENT_SUCCEEDED)
+    public void handlePaymentSucceeded(PaymentSucceededEvent event) throws Exception {
 
-    String inboxKey = "inbox:payment:" + event.getPaymentId();
-    Boolean isFirstTime = redisTemplate.opsForValue()
-            .setIfAbsent(inboxKey, "DONE", Duration.ofDays(7));
+        String inboxKey = "inbox:payment:" + event.getPaymentId();
+        Boolean isFirstTime = redisTemplate.opsForValue()
+                .setIfAbsent(inboxKey, "DONE", Duration.ofDays(7));
 
-    if (Boolean.FALSE.equals(isFirstTime)) {
-        log.info("Pago {} ya fue procesado. Ignorando.", event.getPaymentId());
-        return;
-    }
-
-    try {
-
-        Order order = orderRepository.findById(event.getOrderId())
-                .orElseThrow(() ->
-                        new RuntimeException("Orden no encontrada: " + event.getOrderId()));
-
-        if (order.getStatus() != OrderStatus.PAYMENT_PENDING) {
+        if (Boolean.FALSE.equals(isFirstTime)) {
+            log.info("Pago {} ya fue procesado. Ignorando.", event.getPaymentId());
             return;
         }
 
-        order.setStatus(OrderStatus.PAID);
-        order.setPaymentId(event.getPaymentId());
-        orderRepository.save(order);
+        try {
+            Order order = orderRepository.findById(event.getOrderId())
+                    .orElseThrow(() ->
+                            new RuntimeException("Orden no encontrada: " + event.getOrderId()));
 
-        OrderPaidEvent createdEvent = OrderPaidEvent.builder()
-                .orderId(order.getId())
-                .guestId(order.getGuestId())
-                .sessionId(order.getSessionId())
-                .guestEmail(order.getGuestEmail())
-                .total(order.getTotalAmount())
-                .items(order.getItems().stream().map(item ->
-                        OrderPaidEvent.OrderItemEvent.builder()
-                                .productId(item.getProductId())
-                                .productName(item.getProductName())
-                                .imageUrl(item.getImageUrl())
-                                .quantity(item.getQuantity())
-                                .unitPriceSnapshot(
-                                        BigDecimal.valueOf(
-                                                item.getPrice() != null ? item.getPrice() : 0.0
-                                        )
-                                )
-                                .build()
-                ).toList())
-                .createdAt(order.getCreatedAt()
-                        .atZone(ZoneId.systemDefault())
-                        .toInstant())
-                .build();
+            if (order.getStatus() != OrderStatus.PAYMENT_PENDING) {
+                return;
+            }
 
-        OutboxEvent outbox = new OutboxEvent();
-        outbox.setAggregateId(order.getId());
-        outbox.setEventType("order.paid");
-        outbox.setPayload(objectMapper.writeValueAsString(createdEvent));
-        outboxRepository.save(outbox);
+            order.setStatus(OrderStatus.PAID);
+            order.setPaymentId(event.getPaymentId());
+            orderRepository.save(order);
 
-        log.info("Orden {} marcada como PAID y evento enviado a Outbox", order.getId());
+            // ── Construir evento con desglose financiero completo ────────────
+            OrderPaidEvent createdEvent = OrderPaidEvent.builder()
+                    .orderId(order.getId())
+                    .guestId(order.getGuestId())
+                    .sessionId(order.getSessionId())
+                    .guestEmail(order.getGuestEmail())
+                    .subtotal(order.getSubtotal() != null ? order.getSubtotal() : BigDecimal.ZERO)
+                    .discount(order.getDiscount() != null ? order.getDiscount() : BigDecimal.ZERO)
+                    .tax(order.getTax() != null ? order.getTax() : BigDecimal.ZERO)
+                    .shippingCost(order.getShippingCost() != null ? order.getShippingCost() : BigDecimal.ZERO)
+                    .total(order.getTotalAmount())
+                    .items(order.getItems().stream().map(item ->
+                            OrderPaidEvent.OrderItemEvent.builder()
+                                    .productId(item.getProductId())
+                                    .productName(item.getProductName())
+                                    .imageUrl(item.getImageUrl())
+                                    .quantity(item.getQuantity())
+                                    .unitPriceSnapshot(
+                                            BigDecimal.valueOf(
+                                                    item.getPrice() != null ? item.getPrice() : 0.0
+                                            )
+                                    )
+                                    .build()
+                    ).toList())
+                    .createdAt(order.getCreatedAt()
+                            .atZone(ZoneId.systemDefault())
+                            .toInstant())
+                    .build();
+            // ────────────────────────────────────────────────────────────────
 
-    } catch (Exception e) {
+            OutboxEvent outbox = new OutboxEvent();
+            outbox.setAggregateId(order.getId());
+            outbox.setEventType("order.paid");
+            outbox.setPayload(objectMapper.writeValueAsString(createdEvent));
+            outboxRepository.save(outbox);
 
-        redisTemplate.delete(inboxKey);
+            log.info("Orden {} marcada como PAID y evento enviado a Outbox", order.getId());
 
-        log.error("Error procesando PAYMENT_SUCCEEDED. Se permite reintento.", e);
-        throw e;
+        } catch (Exception e) {
+            redisTemplate.delete(inboxKey);
+            log.error("Error procesando PAYMENT_SUCCEEDED. Se permite reintento.", e);
+            throw e;
+        }
     }
-}
 }

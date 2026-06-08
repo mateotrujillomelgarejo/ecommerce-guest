@@ -20,16 +20,16 @@ public class RabbitMQConfig {
 
     public static final String EXCHANGE = "ecommerce.events";
     public static final String QUEUE_PAYMENT_SUCCEEDED = "order.payment.succeeded.queue";
-    public static final String QUEUE_INVENTORY_FAILED = "order.inventory.failed.queue";
-    public static final String QUEUE_ORDER_SHIPPED = "order.shipped.queue";
+    public static final String QUEUE_INVENTORY_FAILED  = "order.inventory.failed.queue";
+    public static final String QUEUE_ORDER_SHIPPED     = "order.shipped.queue";
 
     public static final String ROUTING_PAYMENT_SUCCEEDED = "payment.succeeded";
-    public static final String ROUTING_INVENTORY_FAILED = "inventory.failed";
-    public static final String ROUTING_ORDER_SHIPPED = "order.shipped";
+    public static final String ROUTING_INVENTORY_FAILED  = "inventory.failed";
+    public static final String ROUTING_ORDER_SHIPPED     = "order.shipped";
 
     @Bean
     public TopicExchange exchange() {
-        return new TopicExchange(EXCHANGE);
+        return new TopicExchange(EXCHANGE, true, false);
     }
 
     @Bean
@@ -47,50 +47,45 @@ public class RabbitMQConfig {
         return new Queue(QUEUE_ORDER_SHIPPED, true);
     }
 
-@Bean
-public Binding paymentSucceededBinding(
-        @Qualifier("paymentSucceededQueue") Queue paymentSucceededQueue,
-        TopicExchange exchange
-) {
-    return BindingBuilder
-            .bind(paymentSucceededQueue)
-            .to(exchange)
-            .with(ROUTING_PAYMENT_SUCCEEDED);
-}
+    @Bean
+    public Binding paymentSucceededBinding(
+            @Qualifier("paymentSucceededQueue") Queue paymentSucceededQueue,
+            TopicExchange exchange) {
+        return BindingBuilder
+                .bind(paymentSucceededQueue)
+                .to(exchange)
+                .with(ROUTING_PAYMENT_SUCCEEDED);
+    }
 
-@Bean
-public Binding inventoryFailedBinding(
-        @Qualifier("inventoryFailedQueue") Queue inventoryFailedQueue,
-        TopicExchange exchange
-) {
-    return BindingBuilder
-            .bind(inventoryFailedQueue)
-            .to(exchange)
-            .with(ROUTING_INVENTORY_FAILED);
-}
+    @Bean
+    public Binding inventoryFailedBinding(
+            @Qualifier("inventoryFailedQueue") Queue inventoryFailedQueue,
+            TopicExchange exchange) {
+        return BindingBuilder
+                .bind(inventoryFailedQueue)
+                .to(exchange)
+                .with(ROUTING_INVENTORY_FAILED);
+    }
 
-@Bean
-public Binding orderShippedBinding(
-        @Qualifier("orderShippedQueue") Queue orderShippedQueue,
-        TopicExchange exchange
-) {
-    return BindingBuilder
-            .bind(orderShippedQueue)
-            .to(exchange)
-            .with(ROUTING_ORDER_SHIPPED);
-}
+    @Bean
+    public Binding orderShippedBinding(
+            @Qualifier("orderShippedQueue") Queue orderShippedQueue,
+            TopicExchange exchange) {
+        return BindingBuilder
+                .bind(orderShippedQueue)
+                .to(exchange)
+                .with(ROUTING_ORDER_SHIPPED);
+    }
 
     @Bean
     public Jackson2JsonMessageConverter jsonMessageConverter() {
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
         objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        
-        objectMapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES); 
+        objectMapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
         Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter(objectMapper);
         converter.setTypePrecedence(Jackson2JavaTypeMapper.TypePrecedence.INFERRED);
         return converter;
     }
-
 }

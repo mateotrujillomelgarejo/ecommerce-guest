@@ -8,7 +8,14 @@ import java.util.List;
 public class CreatePendingOrderRequest {
     private String guestId;
     private String sessionId;
-    private BigDecimal total;
+
+    // ── Desglose financiero (viene de Cart Service via Pricing Service) ──────
+    private BigDecimal subtotal;
+    private BigDecimal discount;
+    private BigDecimal tax;
     private BigDecimal shippingCost;
+    private BigDecimal total;
+    // ────────────────────────────────────────────────────────────────────────
+
     private List<CartItemDTO> items;
 }

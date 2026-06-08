@@ -41,4 +41,13 @@ public class OrderController {
         orderService.updateStatus(id, status);
         return ResponseEntity.ok().build();
     }
+
+    @GetMapping("/verify-purchase")
+    public ResponseEntity<Boolean> verifyPurchase(
+            @RequestParam String userId,
+            @RequestParam String productId) {
+        boolean purchased = orderService.verifyPurchase(userId, productId);
+        return ResponseEntity.ok(purchased);
+    }
+
 }

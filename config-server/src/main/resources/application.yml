@@ -8,9 +8,9 @@ spring:
     config:
       server:
         git:
-          uri: https://github.com/mateotrujillomelgarejo/ecommerce-config-repo  # Crea un repo Git con archivos como cart-service.yml
-          search-paths: '{application}'  # Busca por nombre de servicio
-          default-label: main  # Rama principal
+          uri: https://github.com/mateotrujillomelgarejo/ecommerce-config-repo
+          search-paths: '.'
+          default-label: main
 
 management:
   endpoints:

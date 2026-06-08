@@ -8,71 +8,142 @@ spring:
   config:
     import: ${SPRING_CONFIG_IMPORT:optional:configserver:http://localhost:8888}
 
+  # Redis para rate limiting distribuido
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+      timeout: 2000ms
+
   cloud:
     gateway:
       discovery:
         locator:
           enabled: false
+
+      default-filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: 50
+            redis-rate-limiter.burstCapacity: 100
+            redis-rate-limiter.requestedTokens: 1
+            key-resolver: "#{@ipKeyResolver}"
+
       routes:
+
+        - id: auth-service
+          uri: lb://AUTH-SERVICE
+          predicates:
+            - Path=/auth/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 5
+                redis-rate-limiter.burstCapacity: 10
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
+
+        - id: user-service
+          uri: lb://USER-SERVICE
+          predicates:
+            - Path=/users/**
+          filters:
+            - AuthenticationFilter
+
         - id: product-service
           uri: lb://PRODUCT-SERVICE
           predicates:
-            - Path=/products/**
+            - Path=/products/**, /categories/**
+
+        - id: search-service
+          uri: lb://SEARCH-SERVICE
+          predicates:
+            - Path=/search/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 20
+                redis-rate-limiter.burstCapacity: 40
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
 
         - id: cart-service
           uri: lb://CART-SERVICE
           predicates:
             - Path=/cart/**
-
-        - id: order-service
-          uri: lb://ORDER-SERVICE
-          predicates:
-            - Path=/orders/**
-
-        - id: customer-service
-          uri: lb://CUSTOMER-SERVICE
-          predicates:
-            - Path=/guests/**
-
-        - id: inventory-service
-          uri: lb://INVENTORY-SERVICE
-          predicates:
-            - Path=/inventory/**
+          filters:
+            - AuthenticationFilter
 
         - id: pricing-service
           uri: lb://PRICING-SERVICE
           predicates:
             - Path=/pricing/**
 
-        - id: shipping-service
-          uri: lb://SHIPPING-SERVICE
+        - id: inventory-service
+          uri: lb://INVENTORY-SERVICE
           predicates:
-            - Path=/shipping/**
+            - Path=/inventory/**
+
+        - id: order-service
+          uri: lb://ORDER-SERVICE
+          predicates:
+            - Path=/orders/**
+          filters:
+            - AuthenticationFilter
 
         - id: payment-service
           uri: lb://PAYMENT-SERVICE
           predicates:
             - Path=/payments/**
+          filters:
+            - AuthenticationFilter
+
+        - id: shipping-service
+          uri: lb://SHIPPING-SERVICE
+          predicates:
+            - Path=/shipping/**
+
+        - id: review-service
+          uri: lb://REVIEW-SERVICE
+          predicates:
+            - Path=/reviews/**
+          filters:
+            - AuthenticationFilter
 
 eureka:
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: http://${EUREKA_HOST:localhost}:8761/eureka/
     register-with-eureka: true
     fetch-registry: true
     registry-fetch-interval-seconds: 5
     disable-delta: true
     use-dns-for-fetching-service-urls: false
     eureka-server-connect-timeout-seconds: 10
+  instance:
+    prefer-ip-address: true
+
+auth:
+  service:
+    url: http://${AUTH_SERVICE_HOST:auth-service}:8093
+  validate:
+    cache-ttl-seconds: 30
+    timeout-seconds: 3
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost:4200}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    health:
+      show-details: always
 
 logging:
   level:
-    com.netflix.discovery: DEBUG
-    org.springframework.cloud.gateway: DEBUG
-
-
-    #          filters:
-            #- name: LocalResponseCache
-             # args:
-              #  timeToLive: 30s
-               # size: 10MB 
+    com.netflix.discovery: WARN
+    org.springframework.cloud.gateway: INFO
+    pe.takiq.ecommerce.api_gateway: DEBUG

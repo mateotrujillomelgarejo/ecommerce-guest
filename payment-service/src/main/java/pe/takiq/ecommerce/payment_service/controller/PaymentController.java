@@ -8,16 +8,6 @@ import pe.takiq.ecommerce.payment_service.dto.PaymentRequest;
 import pe.takiq.ecommerce.payment_service.dto.PaymentResponse;
 import pe.takiq.ecommerce.payment_service.service.PaymentService;
 
-/**
- * Controlador para operaciones de pago.
- * 
- * Flujo recomendado (producción y pruebas reales):
- * 1. Crear orden en order-service (estado PAYMENT_PENDING) → obtener orderId
- * 2. POST /payments/initiate con orderId → obtener paymentId
- * 3. POST /payments/confirm/{paymentId} (simulado o webhook real) → publica evento payment.succeeded
- * 
- * El endpoint POST /payments (simulateDirectSuccess) está DEPRECADO porque no garantiza orderId.
- */
 @RestController
 @RequestMapping("/payments")
 @RequiredArgsConstructor
@@ -25,16 +15,6 @@ public class PaymentController {
 
     private final PaymentService paymentService;
 
-    /**
-     * Inicia el proceso de pago asociado a una orden ya creada (PAYMENT_PENDING).
-     * 
-     * Requerido: orderId válido (debe existir en order-service).
-     * Devuelve paymentId para seguimiento o confirmación posterior.
-     * 
-     * Uso típico:
-     * - Frontend crea orden pendiente → obtiene orderId
-     * - Llama aquí para iniciar pago
-     */
     @PostMapping("/initiate")
     public ResponseEntity<PaymentResponse> initiatePayment(@RequestBody PaymentRequest request) {
         PaymentResponse response = paymentService.initiatePayment(request);

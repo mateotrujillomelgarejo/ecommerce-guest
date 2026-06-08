@@ -5,7 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.math.BigDecimal;
+import java.time.Instant;
 
 @Data
 @Builder
@@ -14,8 +15,8 @@ import java.time.LocalDateTime;
 public class PaymentSucceededEvent {
     private String orderId;
     private String paymentId;
-    private Double amount;
+    private BigDecimal amount;
     private String gateway;
-    private LocalDateTime confirmedAt;
+    private Instant confirmedAt;
     private String guestEmail;
 }

@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import pe.takiq.ecommerce.cart_service.client.CartIntegrationManager;
 import pe.takiq.ecommerce.cart_service.dto.ProductDTO;
 import pe.takiq.ecommerce.cart_service.dto.request.AddItemRequestDTO;
+import pe.takiq.ecommerce.cart_service.dto.request.MergeCartRequestDTO;
 import pe.takiq.ecommerce.cart_service.dto.request.PriceCalculationRequest;
 import pe.takiq.ecommerce.cart_service.dto.request.UpdateItemRequestDTO;
 import pe.takiq.ecommerce.cart_service.dto.response.CartResponseDTO;
@@ -31,7 +32,6 @@ public class CartService {
 
     public CartResponseDTO getCartFull(String sessionId) {
         Cart cart = getOrCreateCart(sessionId);
-        
         if (!cart.isNeedsRecalculation() && !cart.getItems().isEmpty()) {
             return mapper.toResponse(cart);
         }
@@ -43,7 +43,7 @@ public class CartService {
 
         if (!integrationManager.checkStock(req.getProductId(), req.getQuantity())) {
             log.warn("Stock insuficiente para el producto: {}", req.getProductId());
-            return mapper.toResponse(cart); 
+            return mapper.toResponse(cart);
         }
 
         Optional<CartItem> existing = cart.getItems().stream()
@@ -51,15 +51,13 @@ public class CartService {
                 .findFirst();
 
         if (existing.isPresent()) {
-            cart.updateQuantity(req.getProductId(), existing.get().getQuantity() + req.getQuantity());
+            cart.updateQuantity(req.getProductId(),
+                    existing.get().getQuantity() + req.getQuantity());
         } else {
             try {
-
                 ProductDTO product = integrationManager.getProduct(req.getProductId());
-
-                String principalImage = (product.getImages() != null && !product.getImages().isEmpty()) 
-                        ? product.getImages().get(0) 
-                        : null;
+                String principalImage = (product.getImages() != null && !product.getImages().isEmpty())
+                        ? product.getImages().get(0) : null;
 
                 CartItem item = new CartItem(
                         product.getId(),
@@ -101,6 +99,69 @@ public class CartService {
         return toFullResponse(cart);
     }
 
+    public CartResponseDTO mergeCart(MergeCartRequestDTO request) {
+        Cart guestCart = cacheService.getCart(request.getGuestSessionId())
+                .orElse(null);
+
+        if (guestCart == null || guestCart.getItems().isEmpty()) {
+            log.info("Carrito guest vacío o inexistente, nada que fusionar: guestSessionId={}",
+                    request.getGuestSessionId());
+            return toFullResponse(getOrCreateCart(request.getUserSessionId()));
+        }
+
+        Cart userCart = getOrCreateCart(request.getUserSessionId());
+
+        for (CartItem guestItem : guestCart.getItems()) {
+            Optional<CartItem> existingInUser = userCart.getItems().stream()
+                    .filter(i -> i.getProductId().equals(guestItem.getProductId()))
+                    .findFirst();
+
+            if (existingInUser.isPresent()) {
+                int combinedQuantity = existingInUser.get().getQuantity() + guestItem.getQuantity();
+                boolean hasStock = integrationManager.checkStock(
+                        guestItem.getProductId(), combinedQuantity);
+
+                if (hasStock) {
+                    userCart.updateQuantity(guestItem.getProductId(), combinedQuantity);
+                    log.debug("Fusión: sumando cantidades productId={}, cantidad={}",
+                            guestItem.getProductId(), combinedQuantity);
+                } else {
+                    boolean userQtyOk = integrationManager.checkStock(
+                            guestItem.getProductId(), existingInUser.get().getQuantity());
+                    if (!userQtyOk) {
+                        log.warn("Sin stock suficiente para productId={} durante fusión",
+                                guestItem.getProductId());
+                    }
+                    log.debug("Stock insuficiente para fusión completa de productId={}, manteniendo cantidad del usuario",
+                            guestItem.getProductId());
+                }
+            } else {
+                boolean hasStock = integrationManager.checkStock(
+                        guestItem.getProductId(), guestItem.getQuantity());
+
+                if (hasStock) {
+                    userCart.addItem(guestItem);
+                    log.debug("Fusión: nuevo item agregado productId={}",
+                            guestItem.getProductId());
+                } else {
+                    log.warn("Sin stock para productId={} durante fusión — item ignorado",
+                            guestItem.getProductId());
+                }
+            }
+        }
+
+        userCart = cacheService.saveCart(userCart);
+
+        cacheService.deleteCart(request.getGuestSessionId());
+        log.info("Fusión completada: guestSessionId={} → userSessionId={}",
+                request.getGuestSessionId(), request.getUserSessionId());
+
+        return toFullResponse(userCart);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // RECÁLCULO DE PRECIOS
+    // ─────────────────────────────────────────────────────────────────────────
 
     private CartResponseDTO toFullResponse(Cart cart) {
         if (cart.getItems() == null || cart.getItems().isEmpty()) {
@@ -133,17 +194,16 @@ public class CartService {
             cart.setTotal(pricing.getTotal().doubleValue());
             cart.setNeedsRecalculation(false);
         } catch (Exception e) {
-            log.warn("Pricing-Service inalcanzable. Calculando precios de Fallback localmente usando Snapshot de Redis.");
-            
+            log.warn("Pricing-Service inalcanzable. Calculando fallback local con snapshots Redis.");
             double fallbackTotal = cart.getItems().stream()
                     .mapToDouble(i -> (i.getPrice() != null ? i.getPrice() : 0.0) * i.getQuantity())
                     .sum();
-            
             cart.setSubtotal(fallbackTotal);
             cart.setDiscount(0.0);
-            cart.setTax(0.0); 
+            cart.setTax(0.0);
             cart.setShippingEstimate(0.0);
             cart.setTotal(fallbackTotal);
+            cart.setNeedsRecalculation(true);
         }
 
         cacheService.saveCart(cart);

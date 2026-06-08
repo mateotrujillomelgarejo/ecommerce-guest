@@ -1,0 +1,65 @@
+server:
+  port: 8087
+
+spring:
+  application:
+    name: search-service
+
+  config:
+    import: ${SPRING_CONFIG_IMPORT:optional:configserver:http://localhost:8888}
+
+  elasticsearch:
+    uris: http://${ELASTICSEARCH_HOST:localhost}:9200
+    username: ${ELASTICSEARCH_USER:}
+    password: ${ELASTICSEARCH_PASS:}
+    connection-timeout: 5s
+    socket-timeout: 30s
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+      timeout: 2000ms
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: 5672
+    username: guest
+    password: guest
+
+search:
+  cache:
+    ttl-seconds: 120          # 2 minutos para resultados de búsqueda
+    suggest-ttl-seconds: 300  # 5 minutos para autocomplete
+  index:
+    name: products
+
+rabbitmq:
+  exchange: ecommerce.events
+  queue:
+    product-updated: search.product-updated.queue
+  routing-key:
+    product-updated: product.updated
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://${EUREKA_HOST:localhost}:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    pe.takiq.ecommerce.search_service: DEBUG
+    org.springframework.data.elasticsearch: INFO

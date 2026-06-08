@@ -1,6 +1,7 @@
 package pe.takiq.ecommerce.shipping_service.model;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -43,7 +44,7 @@ public class Shipment {
     private String addressCountry;
 
     private LocalDateTime createdAt;
-    private LocalDateTime shippedAt;
+    private Instant shippedAt;
     private LocalDateTime deliveredAt;
 
     @PrePersist

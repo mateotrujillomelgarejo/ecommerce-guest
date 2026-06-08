@@ -1,15 +1,14 @@
 package pe.takiq.ecommerce.shipping_service.dto;
 
 import lombok.Data;
-import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Data
 public class GuestResponseDTO {
-    private String guestId;
+    private UUID id;
     private String sessionId;
     private String name;
     private String email;
     private String phone;
     private AddressRequestDTO address;
-    private LocalDateTime createdAt;
 }
